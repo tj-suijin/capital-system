@@ -4,6 +4,48 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 13, 2026 (session 3): Bucket 1, market data and strategies
+
+**Area:** LiquidDirectional bucket (v1 step 3), parts 1 and 2 of 5.
+
+**What changed:**
+- **Market data** (`src/data/`): a verified price feed for the Uniswap V3 WETH/USDC 0.05% pool on Base (`0xd0b53D9277642d899DF5C87A3966A349A798F224`). At startup it checks the pool against the official Uniswap factory and stops if anything differs. It backfills 24 hours of candle history from swap logs, then streams live swaps over Alchemy's WebSocket, or polls the pool if there is no WebSocket. It builds 1-minute and 5-minute candles in a new `candles` table. After a reconnect it fetches the swaps it missed.
+- **Indicators** (`src/analysis/indicators.js`), and the **regime detector, trend-following and mean-reversion strategies, and analyst** (`src/buckets/liquidDirectional/`), ported from the old bot.
+- **`npm run market`**: runs the feed on its own and logs what the analyst thinks at every closed 1-minute candle. Nothing trades.
+- Added `ethers` as a dependency and `ALCHEMY_API_KEY` to `.env.example`.
+- 27 new tests (50 in total, all passing).
+- Fixed `.gitignore`: the `data/` entry meant for the database folder also hid `src/data/`, so the market data code would never have been committed. `data/` and `logs/` are now anchored to the repo root.
+
+**Bugs fixed from the old bot:**
+- The outlier filter froze on any genuine price move of more than 2%, because rejected prices never entered its comparison window.
+- ADX was a single raw reading instead of a smoothed average, so trend strength was much noisier than intended.
+- RSI used a simple average, not the Wilder smoothing that the old docs claimed.
+- The trend stop used the lowest close instead of the lowest low.
+
+**Decisions:**
+- The pool address is checked on-chain at startup instead of being trusted blindly.
+- The reconnect logic never gives up, and a watchdog forces a reconnect after 2 minutes without swaps.
+- Gaps of up to 5 candles are filled flat; longer gaps are left empty so the bucket can see that data is missing.
+- The backfill shrinks its request size automatically when the provider rejects it.
+- The strategies take their parameters as arguments instead of reading a global config, so the backtester can reuse them later.
+
+**Observation:** With the current numbers, trend-following entries will be rare. Even a textbook pullback in a clean uptrend scores 68% × 78% = 53%, under the 55% minimum. Mean-reversion entries clear it more easily.
+
+**Live check:** With the user's Alchemy key, `npm run market` verified the pool at \$2,510 per ETH and backfilled 24 hours (about 19,500 swaps over 43,000 blocks) in 12 seconds. The default 2,000-block log range worked, and no prices were rejected as outliers. The WebSocket subscribed, the gap fill recovered 8 swaps, and the analyst read the market as RANGING (80%) with no setup. A first reading showed no price until the first live swap; it is now seeded from the pool check.
+
+**Unvalidated:** All strategy numbers (`strategy` in `config/portfolio.js`); the 2% outlier threshold; the 2-minute staleness limit; the 5-candle gap fill.
+
+**Next steps:**
+1. The user reviews and commits.
+2. Part 3: the LiquidDirectional bucket itself (entries through the pipeline, exits on stop, target, strategy exit or time limit, no trade on stale or gappy data, stop sanity checks).
+3. Part 4: mark-to-market valuation. Part 5: the paper run.
+
+**Decided by the user:** Positions close after 4 hours if nothing else has closed them. This will be built in part 3.
+
+**Open question:** Should trend-following's confidence formula be loosened, or left alone until a backtest says otherwise?
+
+---
+
 ## October 13, 2026 (session 2): Documentation
 
 **Area:** Documentation (no code changes).

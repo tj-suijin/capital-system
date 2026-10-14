@@ -19,12 +19,15 @@ Copy-Item .env.example .env   # optional: add Telegram keys
 
 Without Telegram keys the system still runs. Only the Telegram controls are turned off.
 
+Bucket 1's price feed needs a Base RPC. Put an Alchemy key in `.env` as `ALCHEMY_API_KEY`, or set `BASE_RPC_URL` and `BASE_WS_URL` for another provider.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `npm start` | Runs the portfolio manager (paper mode by default). Stop with Ctrl+C. |
 | `npm run status` | Prints the current portfolio status as JSON and exits. |
+| `npm run market` | Runs bucket 1's price feed on its own and logs the analyst's view each minute. Nothing trades. |
 | `npm test` | Runs the test suite (`node:test`). |
 
 Data is stored in `data/capital.db`. Logs go to the console (pretty), `logs/app.log` (JSON), and `logs/errors.log` (errors only).
@@ -40,6 +43,10 @@ config/portfolio.js        every tunable number (all UNVALIDATED)
 src/portfolio/             portfolio manager and capital allocator
 src/risk/                  global risk, bucket risk, position sizer
 src/buckets/               bucket base class, intents, registry, placeholder bucket
+src/buckets/liquidDirectional/  bucket 1: regime detector, strategies, analyst
+src/analysis/              technical indicators
+src/data/                  Uniswap V3 pool, backfill, price stream, candles
+src/tools/                 standalone commands (npm run market)
 src/execution/             adapter interface, paper executor, live stub
 src/persistence/db.js      SQLite store
 src/control/controlApi.js  the single operator surface (Telegram, future GUI)

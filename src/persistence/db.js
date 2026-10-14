@@ -118,6 +118,20 @@ export class Store {
         ts               INTEGER NOT NULL
       );
 
+      -- swaps = 0 marks a forward-filled candle (no trades in that interval).
+      CREATE TABLE IF NOT EXISTS candles (
+        pool         TEXT    NOT NULL,
+        timeframe    TEXT    NOT NULL,
+        ts           INTEGER NOT NULL,
+        open         REAL    NOT NULL,
+        high         REAL    NOT NULL,
+        low          REAL    NOT NULL,
+        close        REAL    NOT NULL,
+        volume_quote REAL    NOT NULL DEFAULT 0,
+        swaps        INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (pool, timeframe, ts)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_positions_bucket_status ON positions (bucket_id, status);
       CREATE INDEX IF NOT EXISTS idx_positions_closed_at     ON positions (closed_at);
       CREATE INDEX IF NOT EXISTS idx_decisions_bucket_ts     ON decisions (bucket_id, ts);
@@ -269,6 +283,31 @@ export class Store {
         SELECT * FROM equity_snapshots WHERE bucket_id = ? AND ts >= ? ORDER BY ts DESC LIMIT ?
       ) ORDER BY ts ASC
     `).all(bucketId, sinceMs, limit);
+  }
+
+  // ---- Candles ----
+  upsertCandle(c) {
+    this.db.prepare(`
+      INSERT INTO candles (pool, timeframe, ts, open, high, low, close, volume_quote, swaps)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(pool, timeframe, ts) DO UPDATE SET open=excluded.open, high=excluded.high,
+        low=excluded.low, close=excluded.close, volume_quote=excluded.volume_quote, swaps=excluded.swaps
+    `).run(c.pool, c.timeframe, c.ts, c.open, c.high, c.low, c.close, c.volumeQuote ?? 0, c.swaps ?? 0);
+  }
+
+  // The most recent `limit` candles, oldest first.
+  getCandles(pool, timeframe, limit = 500) {
+    return this.db.prepare(`
+      SELECT * FROM (
+        SELECT * FROM candles WHERE pool = ? AND timeframe = ? ORDER BY ts DESC LIMIT ?
+      ) ORDER BY ts ASC
+    `).all(pool, timeframe, limit);
+  }
+
+  getLastCandle(pool, timeframe, beforeTs = Number.MAX_SAFE_INTEGER) {
+    return this.db.prepare(
+      'SELECT * FROM candles WHERE pool = ? AND timeframe = ? AND ts < ? ORDER BY ts DESC LIMIT 1',
+    ).get(pool, timeframe, beforeTs) ?? null;
   }
 }
 

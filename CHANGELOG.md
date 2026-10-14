@@ -13,3 +13,10 @@ Terse list of trading-logic changes and bug fixes. The narrative history lives i
 - Exits are never blocked by halts, pauses or wind-down.
 - Live gate: a bucket only trades live with `TRADING_MODE=live`, bucket `mode: 'live'` and `live: true`, not `paperOnly`, and a registered live adapter. Otherwise startup fails.
 - Paper executor simulates a 0.05% fee and 0.10% slippage. Both buckets are `NullBucket` placeholders that always return no trade.
+- Market data for bucket 1: Uniswap V3 WETH/USDC 0.05% pool on Base, verified on-chain against the factory at startup; 1m and 5m candles from swap logs, with backfill and gap fill after reconnects.
+- Fix (from trading-bot): the outlier filter now compares against all recent prices, so a genuine move of more than 2% is accepted instead of freezing candles forever.
+- Fix (from trading-bot): ADX is now Wilder-smoothed; it was a single unsmoothed DX reading.
+- Fix (from trading-bot): RSI now uses Wilder smoothing; it was a simple average of the last 14 changes.
+- Fix (from trading-bot): the trend-following stop uses the swing low of candle lows, not closes.
+- Ported regime detector, trend following and mean reversion with unchanged scoring; the analyst also reports each strategy's exit signal whatever the regime.
+- Short gaps in candles (up to 5 intervals) are forward-filled flat; longer gaps are left empty.

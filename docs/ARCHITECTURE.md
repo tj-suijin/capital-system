@@ -101,6 +101,7 @@ SQLite through `node:sqlite`. The tables are:
 | `risk_state` | Global halt and high-water mark, per-bucket pause |
 | `settings` | Wind-down flag and other switches |
 | `equity_snapshots` | Per-bucket and portfolio equity, taken at every heartbeat |
+| `candles` | OHLC, quote volume and swap count per pool, timeframe and interval |
 
 ## Events
 
@@ -109,6 +110,41 @@ SQLite through `node:sqlite`. The tables are:
 ## Heartbeat
 
 Every 5 minutes the manager refreshes global risk, writes equity snapshots, and logs equity, drawdown, halt state and decision counts.
+
+## Market data (bucket 1)
+
+`src/data/` is a shared service. A bucket gets a `MarketData` instance for its pool.
+
+```
+MarketData.start()
+  verifyPool       pool address, token order and fee checked against the Uniswap factory
+  backfill         eth_getLogs swap history → candles (24h, or from the last stored candle)
+  PriceStream      WebSocket swap subscription, or slot0() polling without a WebSocket URL
+  CandleBuilder    swaps → 1m and 5m candles in the `candles` table
+```
+
+- **Prices** are decoded from each swap's `sqrtPriceX96` (`uniswapV3.js`) and quoted as ETH in USDC. Quote volume comes from the USDC leg of the swap.
+- **Outliers:** a price more than 2% from the median of the last 21 prices is dropped. Prices outside the pool's sanity band (\$100 to \$100,000) are also dropped.
+- **Gaps:** up to 5 missing candles are filled flat, marked by `swaps = 0`. Longer gaps stay empty, and `isContiguous()` lets callers detect them.
+- **Reconnects:** a watchdog reconnects after 2 minutes without swaps. After reconnecting, the missed blocks are fetched with `eth_getLogs`, live ticks are buffered meanwhile, and duplicates are dropped by block number.
+- **Events:** `candle` fires when a candle completes, and `price` fires on each accepted swap.
+
+`npm run market` runs this on its own and logs the analyst's view at every closed 1-minute candle.
+
+## Bucket 1 analysis
+
+`src/analysis/indicators.js` holds pure indicator math: EMA, Wilder RSI, MACD, Bollinger Bands, Wilder ADX and swing low.
+
+`src/buckets/liquidDirectional/` holds the strategy logic. It's all pure functions that take candles and parameters:
+
+| Regime (5m candles) | Strategy (1m candles) |
+| --- | --- |
+| `TRENDING_UP` | `trendFollowing`: buy pullbacks to EMA 20 |
+| `RANGING` | `meanReversion`: buy at the lower Bollinger band |
+| `TRENDING_DOWN` | none (long-only) |
+| `UNCERTAIN` | none |
+
+`analyze()` returns a view of the form `{ regime, entry | null, noTradeReason, exits, signals }`. `exits` holds each strategy's current exit signal, whatever the regime, so positions can be closed by the strategy that opened them. The bucket class that turns this view into intents is the next step.
 
 ## Adding a bucket
 

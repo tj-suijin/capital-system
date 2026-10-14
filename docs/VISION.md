@@ -251,8 +251,14 @@ Docs written in session 2: `docs/JOURNAL.md`, `.cursor/rules/journal.mdc`, `CHAN
 
 The shell and docs were committed by the user on October 13, 2026 (commit `f06ec15`) and pushed to the private GitHub repo https://github.com/tj-suijin/capital-system.
 
-**Next:**
-1. Bucket 1 (LiquidDirectional): port the old ETH/USDC logic, and replace Aerodrome data and execution with Uniswap V3 on Base, in paper mode. Add mark-to-market pricing at the same time.
+**Bucket 1 (LiquidDirectional), in progress.** Parts 1 and 2 of 5 are coded and tested (50 tests passing) and are waiting for the user's review:
+1. Done: market data for the Uniswap V3 WETH/USDC 0.05% pool on Base (on-chain verification, backfill, live stream, candles). Verified against the live chain with the user's Alchemy key.
+2. Done: indicators (with the ADX and RSI fixes), regime detector, both strategies, and the analyst.
+3. Next: the bucket class (entries, exits, stale-data and stop sanity checks).
+4. Then: mark-to-market valuation.
+5. Then: the paper run.
+
+See `docs/JOURNAL.md` for details.
 
 ---
 
@@ -291,7 +297,7 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
 - Windows, PowerShell, Node 24.
 - **Open `W:\DEV\capital-system` as the Cursor workspace.** Working from the home folder makes every file write prompt for approval.
 - Git identity is set globally (`wave!`, a personal Gmail address). Switch to GitHub's no-reply email before pushing to any public repo.
-- `gh` (the GitHub CLI) is not installed. GitHub is linked to the user's Cursor account.
+- `gh` (the GitHub CLI) is installed on Windows and logged in as `tj-suijin`. GitHub is also linked to the user's Cursor account. The repo uses LF line endings via `.gitattributes`.
 - npm warns `Unknown env config "devdir"`, probably left over from the Build Tools attempt. The user should remove that setting.
 - Telegram keys go in `.env` (template: `.env.example`). Without them the Telegram controls are off.
 - Cursor's agent sandbox does not work on this Windows machine, so agent terminal commands fail inside it. Fixed in session 2: Cursor Settings > Agents uses Allowlist mode with sandboxing off, and `npm test`, `npm run status`, `git status`, `git diff` and `git log` are allowlisted. Other commands ask for approval.

@@ -26,6 +26,13 @@ export const E = {
   CAPITAL_RESERVE:    { code: 'CA_002', msg: 'Reserve capital cannot be allocated' },
   EXEC_FAILED:        { code: 'EX_001', msg: 'Execution failed' },
   EXEC_NOT_IMPL:      { code: 'EX_002', msg: 'Execution adapter not implemented' },
+
+  // Market data
+  DATA_NO_RPC:        { code: 'DA_001', msg: 'No RPC URL configured (set ALCHEMY_API_KEY or BASE_RPC_URL)' },
+  DATA_POOL_MISMATCH: { code: 'DA_002', msg: 'On-chain pool does not match its definition' },
+  DATA_UNKNOWN_POOL:  { code: 'DA_003', msg: 'Unknown pool' },
+  DATA_BACKFILL:      { code: 'DA_004', msg: 'Backfill failed' },
+  DATA_STREAM:        { code: 'DA_005', msg: 'Price stream error' },
 };
 
 export class TradingError extends Error {

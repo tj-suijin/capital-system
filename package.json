@@ -10,9 +10,11 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
     "status": "node --env-file-if-exists=.env src/index.js status",
+    "market": "node --env-file-if-exists=.env src/tools/market.js",
     "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
+    "ethers": "^6.17.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0"
   }
