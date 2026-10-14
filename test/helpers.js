@@ -41,6 +41,12 @@ export class ScriptedBucket extends Bucket {
     super(opts);
     this.entries = [];
     this.exits   = [];
+    this.marks   = {}; // symbol → price, or a function that throws
+  }
+  markPrice(symbol, now) {
+    const m = this.marks[symbol];
+    if (typeof m === 'function') return m();
+    return m == null ? null : { price: m, ts: now };
   }
   async evaluate() {
     return this.entries.shift() ?? noTrade('script empty');

@@ -17,6 +17,7 @@ import { sizePosition } from '../risk/positionSizer.js';
 import { E, TradingError } from '../shared/errors.js';
 import { createLogger } from '../shared/logger.js';
 import { CapitalAllocator } from './capitalAllocator.js';
+import { markPosition, sumMarks } from './valuation.js';
 
 export const OUTCOME = {
   NO_TRADE: 'NO_TRADE',
@@ -44,12 +45,18 @@ export class PortfolioManager {
     this.events       = new EventEmitter();
     this.log          = createLogger('PORTFOLIO');
 
-    this.allocator  = new CapitalAllocator({ store, config, clock });
+    this.allocator  = new CapitalAllocator({
+      store, config, clock,
+      unrealized: bucketId => sumMarks(this.openPositions(bucketId)).unrealizedPnlUsd,
+    });
     this.bucketRisk = new BucketRisk({ store, config, clock });
     this.globalRisk = new GlobalRiskEngine({
       store, config, clock,
       getEquity:        () => this.allocator.totalEquity(),
-      getGrossExposure: () => this.allocator.totalInUse(),
+      getGrossExposure: () => {
+        const m = sumMarks(this.openPositions());
+        return this.allocator.totalInUse() + m.valueUsd - m.notionalUsd;
+      },
       onHalt:           e => this.events.emit('risk', { type: 'HALT', ...e, ts: this.clock() }),
     });
 
@@ -111,6 +118,7 @@ export class PortfolioManager {
     try {
       await this._reviewExits(bucket);
       await this._evaluateEntry(bucket);
+      this.globalRisk.refresh(); // marks move every cycle, so drawdown is checked every cycle
     } catch (err) {
       this.log.error({ bucket: bucketId, err: err.message }, 'Bucket cycle failed');
       this._decide(bucket, OUTCOME.ERROR, 'bucket', null, err.message, null);
@@ -148,7 +156,7 @@ export class PortfolioManager {
 
     const lim       = this.config.buckets[bucketId].risk;
     const ledger    = this.allocator.ledger(bucketId);
-    const equityUsd = ledger.cash_usd + ledger.in_use_usd;
+    const equityUsd = this.allocator.equity(bucketId);
     const size = sizePosition({
       bucketEquityUsd:        equityUsd,
       availableCashUsd:       ledger.cash_usd,
@@ -245,16 +253,18 @@ export class PortfolioManager {
   heartbeat() {
     const ts = this.clock();
     const risk = this.globalRisk.refresh();
-    for (const l of this.allocator.summary()) {
-      this.store.insertEquitySnapshot({ bucketId: l.bucketId, equityUsd: l.equityUsd, cashUsd: l.cashUsd, inUseUsd: l.inUseUsd, realizedPnlUsd: l.realizedPnlUsd, ts });
+    const summary = this.allocator.summary();
+    for (const l of summary) {
+      this.store.insertEquitySnapshot({ bucketId: l.bucketId, equityUsd: l.equityUsd, cashUsd: l.cashUsd, inUseUsd: l.inUseUsd, realizedPnlUsd: l.realizedPnlUsd, unrealizedPnlUsd: l.unrealizedPnlUsd, ts });
     }
-    const totals = this.allocator.summary().reduce((a, l) => ({
-      cashUsd: a.cashUsd + l.cashUsd, inUseUsd: a.inUseUsd + l.inUseUsd, realizedPnlUsd: a.realizedPnlUsd + l.realizedPnlUsd,
-    }), { cashUsd: 0, inUseUsd: 0, realizedPnlUsd: 0 });
+    const totals = summary.reduce((a, l) => ({
+      cashUsd: a.cashUsd + l.cashUsd, inUseUsd: a.inUseUsd + l.inUseUsd,
+      realizedPnlUsd: a.realizedPnlUsd + l.realizedPnlUsd, unrealizedPnlUsd: a.unrealizedPnlUsd + l.unrealizedPnlUsd,
+    }), { cashUsd: 0, inUseUsd: 0, realizedPnlUsd: 0, unrealizedPnlUsd: 0 });
     this.store.insertEquitySnapshot({ bucketId: 'portfolio', equityUsd: risk.equity, ...totals, ts });
 
     const counts = this.store.decisionCountsSince(ts - this.config.heartbeatIntervalMs);
-    this.log.info({ equityUsd: +risk.equity.toFixed(2), drawdownPct: +(risk.drawdownPct * 100).toFixed(2), halted: this.globalRisk.isHalted(), decisions: counts }, 'Heartbeat');
+    this.log.info({ equityUsd: +risk.equity.toFixed(2), unrealizedPnlUsd: +totals.unrealizedPnlUsd.toFixed(2), drawdownPct: +(risk.drawdownPct * 100).toFixed(2), halted: this.globalRisk.isHalted(), decisions: counts }, 'Heartbeat');
     this.events.emit('heartbeat', { ts, equityUsd: risk.equity, drawdownPct: risk.drawdownPct, decisions: counts });
   }
 
@@ -286,6 +296,25 @@ export class PortfolioManager {
   unhalt() {
     this.globalRisk.unhalt();
     this.events.emit('control', { type: 'UNHALT', ts: this.clock() });
+  }
+
+  // ------------------------------------------------------------ valuation
+
+  // Open positions with their current mark (see valuation.js).
+  openPositions(bucketId = null) {
+    const now = this.clock();
+    return this.store.getOpenPositions(bucketId).map(p => markPosition(p, this._mark(p, now), now));
+  }
+
+  _mark(position, now) {
+    const bucket = this.registry.get(position.bucket_id);
+    if (!bucket) return null;
+    try {
+      return bucket.markPrice(position.symbol, now);
+    } catch (err) {
+      this.log.error({ bucket: bucket.id, positionId: position.id, code: E.MARK_FAILED.code, err: err.message }, E.MARK_FAILED.msg);
+      return null;
+    }
   }
 
   // --------------------------------------------------------------- status
@@ -351,7 +380,7 @@ export class PortfolioManager {
       bucketId:      bucket.id,
       mode:          bucket.mode,
       availableUsd:  ledger.cash_usd,
-      equityUsd:     ledger.cash_usd + ledger.in_use_usd,
+      equityUsd:     this.allocator.equity(bucket.id),
       openPositions: this.store.getOpenPositions(bucket.id),
     };
   }

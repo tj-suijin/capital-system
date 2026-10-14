@@ -117,6 +117,20 @@ export class LiquidDirectionalBucket extends Bucket {
     return out;
   }
 
+  // ------------------------------------------------------------------ mark
+
+  // The last live swap, or the newest stored candle when the feed has not
+  // ticked (still starting, down, or a separate `npm run status` process).
+  // A stale mark is still the last price the feed accepted, so it is used.
+  markPrice(symbol) {
+    if (symbol !== this.trade.symbol) return null;
+    if (this.market.lastTickAt != null && this.market.lastPrice > 0) {
+      return { price: this.market.lastPrice, ts: this.market.lastTickAt };
+    }
+    const [last] = this.market.getCandles(this.params.entry.timeframe, 1);
+    return last ? { price: last.close, ts: last.ts } : null;
+  }
+
   // --------------------------------------------------------------- status
 
   status() {

@@ -39,6 +39,7 @@ class FakeMarket {
   constructor({ entry = dip(), regime = RANGE } = {}) {
     this.candles = { '1m': candles(entry, MIN), '5m': candles(regime, 5 * MIN) };
     this.lastPrice = entry.at(-1);
+    this.lastTickAt = NOW;
     this.stale = false;
     this.failStart = null;
   }
@@ -141,6 +142,21 @@ test('LD bucket: no exits are requested without a live price', async () => {
   assert.deepEqual(await bucket.reviewPositions([pos({ stop_loss: 1e9 })], ctx()), []);
 });
 
+// ---- mark price ----
+
+test('LD bucket: marks at the last live swap, falls back to the newest candle, ignores other symbols', async () => {
+  const { bucket, market } = await makeBucket();
+  assert.deepEqual(bucket.markPrice('ETH/USDC'), { price: market.lastPrice, ts: NOW });
+  assert.equal(bucket.markPrice('BONK/SOL'), null);
+
+  market.lastTickAt = null;
+  const last = market.candles['1m'].at(-1);
+  assert.deepEqual(bucket.markPrice('ETH/USDC'), { price: last.close, ts: last.ts });
+
+  market.candles['1m'] = [];
+  assert.equal(bucket.markPrice('ETH/USDC'), null);
+});
+
 // ---- through the portfolio pipeline ----
 
 test('LD bucket: paper position opens through the pipeline and closes at its stop', async () => {
@@ -159,6 +175,10 @@ test('LD bucket: paper position opens through the pipeline and closes at its sto
   assert.equal(open.tag, 'mean_reversion');
   assert.ok(open.stop_loss < open.entry_price && open.take_profit > open.entry_price);
   assert.equal(store.getRecentDecisions(1, 'liquidDirectional')[0].outcome, 'APPROVED');
+
+  const [marked] = pm.openPositions('liquidDirectional');
+  assert.equal(marked.markPrice, market.lastPrice);
+  assert.ok(Math.abs(marked.unrealizedPnlUsd - (open.qty * market.lastPrice - open.notional_usd - open.open_fee_usd)) < 1e-9);
 
   market.lastPrice = open.stop_loss * 0.999;
   await pm.runBucketCycle('liquidDirectional');

@@ -31,8 +31,9 @@ export class ControlApi {
     return this.store.getRecentTrades(limit, bucketId);
   }
 
+  // Each position carries priced, markPrice, markTs, markAgeMs, heldMs, valueUsd and unrealizedPnlUsd.
   getOpenPositions({ bucketId = null } = {}) {
-    return this.store.getOpenPositions(bucketId);
+    return this.pm.openPositions(bucketId);
   }
 
   getEquityHistory({ bucketId = 'portfolio', sinceMs = 0, limit = 2000 } = {}) {

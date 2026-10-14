@@ -34,7 +34,7 @@ Data is stored in `data/capital.db`. Logs go to the console (pretty), `logs/app.
 
 ## Telegram commands
 
-`/status`, `/buckets`, `/decisions [bucket]`, `/pause <bucket>`, `/resume <bucket>`, `/winddown [off]`, `/halt`, `/unhalt`, `/help`. Only messages from `TELEGRAM_CHAT_ID` are accepted. There is intentionally no command that turns on live trading.
+`/status`, `/buckets`, `/positions [bucket]`, `/decisions [bucket]`, `/pause <bucket>`, `/resume <bucket>`, `/winddown [off]`, `/halt`, `/unhalt`, `/help`. Only messages from `TELEGRAM_CHAT_ID` are accepted. There is intentionally no command that turns on live trading.
 
 ## Layout
 

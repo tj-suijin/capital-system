@@ -6,7 +6,9 @@
 //   in_use_usd       — notional currently locked in open positions (at cost)
 //   realized_pnl_usd — cumulative realized P&L (net of fees)
 //
-// Equity is cash + in_use (marked at cost; no mark-to-market in step 1).
+// Equity is cash + in_use + unrealized P&L of open positions. The ledger
+// itself only moves on open and close; unrealized P&L comes from the
+// injected `unrealized(bucketId)` (see valuation.js).
 import { RESERVE_ID } from '../../config/portfolio.js';
 import { E, TradingError } from '../shared/errors.js';
 import { createLogger } from '../shared/logger.js';
@@ -14,11 +16,12 @@ import { createLogger } from '../shared/logger.js';
 const EPS = 1e-9;
 
 export class CapitalAllocator {
-  constructor({ store, config, clock = Date.now }) {
-    this.store  = store;
-    this.config = config;
-    this.clock  = clock;
-    this.log    = createLogger('ALLOCATOR');
+  constructor({ store, config, clock = Date.now, unrealized = () => 0 }) {
+    this.store      = store;
+    this.config     = config;
+    this.clock      = clock;
+    this.unrealized = unrealized;
+    this.log        = createLogger('ALLOCATOR');
   }
 
   // Creates ledgers on first run. Existing ledgers are kept as-is; changing
@@ -63,11 +66,11 @@ export class CapitalAllocator {
 
   equity(bucketId) {
     const l = this.ledger(bucketId);
-    return l.cash_usd + l.in_use_usd;
+    return l.cash_usd + l.in_use_usd + this.unrealized(bucketId);
   }
 
   totalEquity() {
-    return this.store.getAllLedgers().reduce((s, l) => s + l.cash_usd + l.in_use_usd, 0);
+    return this.store.getAllLedgers().reduce((s, l) => s + l.cash_usd + l.in_use_usd + this.unrealized(l.bucket_id), 0);
   }
 
   totalInUse() {
@@ -99,14 +102,18 @@ export class CapitalAllocator {
   }
 
   summary() {
-    return this.store.getAllLedgers().map(l => ({
-      bucketId:       l.bucket_id,
-      allocatedUsd:   l.allocated_usd,
-      cashUsd:        l.cash_usd,
-      inUseUsd:       l.in_use_usd,
-      realizedPnlUsd: l.realized_pnl_usd,
-      equityUsd:      l.cash_usd + l.in_use_usd,
-    }));
+    return this.store.getAllLedgers().map(l => {
+      const unrealizedPnlUsd = this.unrealized(l.bucket_id);
+      return {
+        bucketId:       l.bucket_id,
+        allocatedUsd:   l.allocated_usd,
+        cashUsd:        l.cash_usd,
+        inUseUsd:       l.in_use_usd,
+        realizedPnlUsd: l.realized_pnl_usd,
+        unrealizedPnlUsd,
+        equityUsd:      l.cash_usd + l.in_use_usd + unrealizedPnlUsd,
+      };
+    });
   }
 
   _why(def, detail) {

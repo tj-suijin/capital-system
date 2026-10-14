@@ -4,6 +4,45 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 13, 2026 (session 4): Bucket 1, mark-to-market valuation
+
+**Area:** LiquidDirectional bucket, part 4 of 5, and the portfolio shell's equity and risk. Part 3 was committed as `9896957`.
+
+**What changed:**
+- New `src/portfolio/valuation.js`. Each open position is valued at quantity times the mark price. Its unrealized P&L is that value minus the notional and the opening fee already paid. A position without a price is valued at cost.
+- Buckets now have a `markPrice(symbol, now)` method. The base class returns no price. Bucket 1 returns the last swap its feed accepted, or the newest stored 1-minute candle if the feed hasn't ticked yet. That fallback also gives `npm run status` real marks.
+- Equity is now cash plus in use plus unrealized P&L, everywhere: position sizing, the bucket's max-size check, the high-water mark, the drawdown halt, gross exposure (now at market value), heartbeat logs and equity snapshots.
+- The drawdown halt is now also checked at the end of every bucket cycle (every 60 seconds), not only on closes and the 5-minute heartbeat.
+- `equity_snapshots` has a new `unrealized_pnl_usd` column. Existing databases get it automatically; the migration ran cleanly on the real database.
+- `ControlApi.getOpenPositions()` returns each position with its mark price, mark age, time held, value and unrealized P&L.
+- Telegram: `/status` shows realized and unrealized P&L per bucket, and a new `/positions [bucket]` (or `/p`) lists open positions with their mark, P&L, stop, target and time held.
+- A failing mark lookup is logged with the new code `MK_001` and leaves the position at cost, so it cannot break a cycle.
+- 9 new tests (66 in total, all passing), including a drawdown halt caused purely by an open loss, the high-water mark rising on open gains, and exposure at market value.
+
+**Why:** Until now drawdown, the halt and sizing only saw realized losses, so an open position could lose a lot without any risk control noticing until it closed. The paper run (part 5) needs equity and drawdown that reflect the live price.
+
+**Decisions** (also in `DECISIONS.md`):
+- Marks are mid prices. Estimated exit costs are not deducted, so a close comes in about 0.15% under the last mark with the paper settings.
+- Bucket 1 marks from its own pool. There is no second reference price yet.
+- A stale mark is still used, because it is the last trusted price; `/positions` shows its age.
+- Drawdown includes unrealized P&L, so unrealized gains raise the high-water mark and giving them back counts as drawdown.
+- Daily and weekly loss limits stay realized-only.
+
+**Unvalidated:** Whether mid-price marks (rather than marks net of exit costs) are the right basis for the halt. No new numeric parameters were added.
+
+**Not verified:** No position has been open yet on the real feed, so marks have only been exercised in tests. `npm run status` ran cleanly against the real database.
+
+**Telegram set up:** The user created a new bot token and found the chat ID. A first start failed with a 401 because `.env` still held an old, revoked token. With the current token, `npm start` delivered the startup message to the user's phone. Startup, the backfill and the heartbeat (showing \$0 unrealized P&L) all looked normal.
+
+**Next steps:**
+1. The user reviews and commits.
+2. Optionally run `npm start` for a few minutes and check `/status` and `/positions`.
+3. Part 5: the long paper run.
+
+**Open questions:** Should bucket 1 add a second reference price (for example Chainlink ETH/USD) for marks and exits? Should the daily and weekly loss limits count unrealized losses?
+
+---
+
 ## October 13, 2026 (session 3, continued): Bucket 1, the bucket itself
 
 **Area:** LiquidDirectional bucket, part 3 of 5. Parts 1 and 2 were committed as `d361a61`.

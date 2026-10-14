@@ -229,7 +229,7 @@ The user wants to hit the ground running. Optimize for clarity, safety, and incr
 
 ---
 
-## 12. Build Status (as of October 13, 2026)
+## 12. Build Status (as of October 13, 2026, bucket 1 part 4)
 
 **v1 step 1, the portfolio shell, has been coded, tested (23 passing tests), reviewed and committed.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
 
@@ -255,8 +255,8 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
 1. Done: market data for the Uniswap V3 WETH/USDC 0.05% pool on Base (on-chain verification, backfill, live stream, candles). Verified against the live chain with the user's Alchemy key.
 2. Done: indicators (with the ADX and RSI fixes), regime detector, both strategies, and the analyst.
 3. Done and committed (`9896957`): the bucket class (entries, exits including the 4-hour limit, stale-data and stop sanity checks). 57 tests passing; ran live with `npm start`.
-4. Next: mark-to-market valuation.
-5. Then: the paper run.
+4. Done and committed ("Bucket 1 part 4: mark-to-market valuation"): mark-to-market valuation. Equity, sizing, the high-water mark, the drawdown halt, exposure, snapshots, status and a new Telegram `/positions` command all use the live pool price. 66 tests passing.
+5. Next: the paper run.
 
 See `docs/JOURNAL.md` for details.
 
@@ -282,7 +282,7 @@ See `docs/JOURNAL.md` for details.
   3. The bucket is not `paperOnly` (the Degen bucket is)
   4. A real live adapter is registered. None exist yet.
 - **Long-only spot for now.** The old Aave short logic is not carried over yet.
-- **Equity is valued at cost** until a price feed arrives with bucket 1.
+- **Equity is marked to market** (since bucket 1 part 4): open positions are valued at the bucket's latest price, and drawdown includes unrealized losses. Daily and weekly loss limits stay realized-only.
 - **Changing allocation percentages in config does not move capital** that is already in the ledgers. Rebalancing is a deliberate, manual act.
 - **Starting parameters (all UNVALIDATED):**
   - $1000 paper capital

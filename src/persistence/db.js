@@ -110,13 +110,14 @@ export class Store {
       );
 
       CREATE TABLE IF NOT EXISTS equity_snapshots (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        bucket_id        TEXT    NOT NULL,
-        equity_usd       REAL    NOT NULL,
-        cash_usd         REAL    NOT NULL,
-        in_use_usd       REAL    NOT NULL,
-        realized_pnl_usd REAL    NOT NULL,
-        ts               INTEGER NOT NULL
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        bucket_id          TEXT    NOT NULL,
+        equity_usd         REAL    NOT NULL,
+        cash_usd           REAL    NOT NULL,
+        in_use_usd         REAL    NOT NULL,
+        realized_pnl_usd   REAL    NOT NULL,
+        unrealized_pnl_usd REAL    NOT NULL DEFAULT 0,
+        ts                 INTEGER NOT NULL
       );
 
       -- swaps = 0 marks a forward-filled candle (no trades in that interval).
@@ -139,6 +140,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_equity_bucket_ts        ON equity_snapshots (bucket_id, ts);
     `);
     this._addColumn('positions', 'tag', 'TEXT');
+    this._addColumn('equity_snapshots', 'unrealized_pnl_usd', 'REAL NOT NULL DEFAULT 0');
   }
 
   // For databases created before a column existed.
@@ -280,9 +282,9 @@ export class Store {
   // ---- Equity snapshots ----
   insertEquitySnapshot(s) {
     this.db.prepare(`
-      INSERT INTO equity_snapshots (bucket_id, equity_usd, cash_usd, in_use_usd, realized_pnl_usd, ts)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(s.bucketId, s.equityUsd, s.cashUsd, s.inUseUsd, s.realizedPnlUsd, s.ts);
+      INSERT INTO equity_snapshots (bucket_id, equity_usd, cash_usd, in_use_usd, realized_pnl_usd, unrealized_pnl_usd, ts)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(s.bucketId, s.equityUsd, s.cashUsd, s.inUseUsd, s.realizedPnlUsd, s.unrealizedPnlUsd ?? 0, s.ts);
   }
 
   getEquityHistory(bucketId, sinceMs = 0, limit = 2000) {

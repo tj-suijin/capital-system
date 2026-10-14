@@ -27,6 +27,9 @@ export const E = {
   EXEC_FAILED:        { code: 'EX_001', msg: 'Execution failed' },
   EXEC_NOT_IMPL:      { code: 'EX_002', msg: 'Execution adapter not implemented' },
 
+  // Valuation
+  MARK_FAILED:        { code: 'MK_001', msg: 'Mark price lookup failed — position valued at cost' },
+
   // Market data
   DATA_NO_RPC:        { code: 'DA_001', msg: 'No RPC URL configured (set ALCHEMY_API_KEY or BASE_RPC_URL)' },
   DATA_POOL_MISMATCH: { code: 'DA_002', msg: 'On-chain pool does not match its definition' },

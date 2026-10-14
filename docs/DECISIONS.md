@@ -34,7 +34,19 @@ Each entry records what was decided, why, and whether it can be revisited. The f
 
 **The reserve is never traded.** It also holds the future Yield and Swing shares until those buckets exist.
 
-**Equity is valued at cost** until bucket 1 brings a price feed. Until then, drawdown only reflects realized losses.
+**Equity is marked to market** (Oct 13, 2026, bucket 1 part 4). Equity is cash plus the market value of open positions, minus the opening fees already paid. It replaces the at-cost valuation of the shell, and it is used everywhere equity is used: sizing, bucket and global risk, snapshots, status and Telegram.
+
+**Marks are mid prices.** The estimated close fee and slippage are not deducted, so a position closes slightly below its last mark (about 0.15% with the paper settings). Deducting them would tie valuation to one executor's cost model.
+
+**Each bucket prices its own positions** through `markPrice(symbol, now)`, because each bucket owns its market data. A bucket that has no price (the degen placeholder, or a failed lookup) leaves the position at cost instead of guessing.
+
+**Bucket 1 marks from its own pool.** It uses the last swap the feed accepted. When the feed hasn't ticked (still starting, or a separate `npm run status` process), it uses the newest stored 1-minute candle. A stale mark is still used, because it is the last trusted price, and its age is shown in `/positions`. A second reference price to guard against pool manipulation is left for later. With the current limits (at most two positions of 10% of a \$600 bucket), even a total loss on both positions could not reach the 15% drawdown halt.
+
+**Drawdown includes unrealized P&L.** Unrealized gains raise the high-water mark, and giving them back counts as drawdown. The halt is now checked at the end of every bucket cycle as well as on closes and heartbeats, because marks move between heartbeats.
+
+**Daily and weekly loss limits stay realized-only.** Counting open losses would block entries whenever a position is temporarily under water. The drawdown halt already covers large open losses. This can be revisited.
+
+**Gross exposure uses market value,** so a position that has grown takes up more of the 50% cap.
 
 ## Modes
 
@@ -116,6 +128,6 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 ## Open questions
 
 - How should a manual rebalance between ledgers work, and should it require the portfolio to be flat first?
-- Which price source should mark-to-market use for bucket 1: the Uniswap pool itself, or a second reference to guard against pool manipulation?
+- Should bucket 1 add a second reference price (for example a Chainlink ETH/USD feed) to guard its marks and exits against pool manipulation? For now it marks from its own pool.
 - Should trend-following's confidence formula be loosened, or left until a backtest?
-- Should drawdown include unrealized losses once mark-to-market exists? It should, but this changes how often the halt can trip.
+- Should the daily and weekly loss limits count unrealized losses? For now they count realized losses only.

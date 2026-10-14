@@ -9,6 +9,7 @@ const HELP = [
   '<b>Commands</b>',
   '/status — portfolio + every bucket',
   '/buckets — bucket list',
+  '/positions [bucket] — open positions at the latest price',
   '/decisions [bucket] — last 5 decisions',
   '/pause &lt;bucket&gt; — stop new entries for one bucket',
   '/resume &lt;bucket&gt; — resume one bucket',
@@ -21,6 +22,8 @@ const HELP = [
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const usd = n => `$${(n ?? 0).toFixed(2)}`;
 const pct = n => `${((n ?? 0) * 100).toFixed(2)}%`;
+const signedUsd = n => `${n < 0 ? '-' : '+'}$${Math.abs(n ?? 0).toFixed(2)}`;
+const age = ms => (ms < 120_000 ? `${Math.round(ms / 1000)}s` : ms < 7_200_000 ? `${Math.round(ms / 60_000)}m` : `${(ms / 3_600_000).toFixed(1)}h`);
 
 export class TelegramControl {
   constructor({ api, token = process.env.TELEGRAM_BOT_TOKEN, chatId = process.env.TELEGRAM_CHAT_ID }) {
@@ -105,6 +108,7 @@ export class TelegramControl {
     switch (cmd) {
       case '/status': case '/s':  return this._status();
       case '/buckets': case '/b': return this._buckets();
+      case '/positions': case '/p': return this._positions(args[0]);
       case '/decisions': case '/d': return this._decisions(args[0]);
       case '/pause':
         if (!args[0]) return 'Usage: /pause &lt;bucket&gt;';
@@ -146,7 +150,7 @@ export class TelegramControl {
       const d = b.decisions24h;
       lines.push(
         `<b>${esc(b.name)}</b> [${esc(b.id)}] ${esc(b.mode)}${b.paused ? ' ⏸' : ''}`,
-        `  Equity ${usd(b.equityUsd)} | P&amp;L ${usd(b.realizedPnlUsd)} | Open ${b.openPositions}`,
+        `  Equity ${usd(b.equityUsd)} | Realized ${usd(b.realizedPnlUsd)} | Unrealized ${signedUsd(b.unrealizedPnlUsd)} | Open ${b.openPositions}`,
         `  24h: ${d.NO_TRADE ?? 0} no-trade, ${d.REJECTED ?? 0} rejected, ${d.APPROVED ?? 0} opened`,
       );
       if (b.detail?.regime) {
@@ -161,6 +165,18 @@ export class TelegramControl {
   _buckets() {
     return ['<b>Buckets</b>', ...this.api.listBuckets().map(b =>
       `${b.paused ? '⏸' : '▶️'} ${esc(b.id)} — ${esc(b.mode)} — ${usd(b.equityUsd)} — ${b.openPositions} open`)].join('\n');
+  }
+
+  _positions(bucketId) {
+    const rows = this.api.getOpenPositions({ bucketId: bucketId ?? null });
+    if (!rows.length) return 'No open positions.';
+    return ['<b>Open positions</b>', ...rows.map(p => [
+      `#${p.id} [${esc(p.bucket_id)}] ${esc(p.symbol)} ${usd(p.notional_usd)} @ ${p.entry_price.toFixed(2)}`,
+      p.priced
+        ? `  Mark ${p.markPrice.toFixed(2)}${p.markAgeMs != null ? ` (${age(p.markAgeMs)} old)` : ''} | P&amp;L ${signedUsd(p.unrealizedPnlUsd)}`
+        : '  No price — valued at cost',
+      `  Stop ${p.stop_loss?.toFixed(2) ?? '—'} | Target ${p.take_profit?.toFixed(2) ?? '—'} | Held ${age(p.heldMs)}`,
+    ].join('\n'))].join('\n');
   }
 
   _decisions(bucketId) {

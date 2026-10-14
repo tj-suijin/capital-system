@@ -28,6 +28,12 @@ export class Bucket {
     return [];
   }
 
+  // Latest trusted price for a symbol this bucket trades: { price, ts } or null.
+  // null means open positions in that symbol are valued at cost.
+  markPrice(_symbol, _now) {
+    return null;
+  }
+
   onFill(_position) {}
   onClose(_position) {}
 

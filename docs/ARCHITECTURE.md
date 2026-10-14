@@ -62,17 +62,19 @@ size = min(size, free cash)
 
 ## Capital
 
-Each bucket has a persisted ledger with four fields: allocated, cash, in use, and realized P&L. Equity is cash plus in use. Positions are valued **at cost** until a price feed exists. Capital not given to any bucket sits in the `reserve` ledger, which can never open a position.
+Each bucket has a persisted ledger with four fields: allocated, cash, in use, and realized P&L. Capital not given to any bucket sits in the `reserve` ledger, which can never open a position.
+
+**Equity is marked to market:** cash plus in use plus the unrealized P&L of open positions. The ledger only moves when a position opens or closes. `valuation.js` values each open position at `qty × mark price` and subtracts its notional and the opening fee already paid. The mark is a mid price, so estimated exit costs are not deducted. Each bucket supplies marks for its own symbols through `markPrice(symbol, now)`. Bucket 1 uses the last live pool swap, or the newest stored 1-minute candle when the feed hasn't ticked. A position without a price is valued at cost. Marked equity feeds sizing, bucket and global risk, snapshots, status and Telegram. `ControlApi.getOpenPositions()` returns each position with its mark, its age, its value and its unrealized P&L.
 
 Ledgers are created on first run from `config/portfolio.js`. After that they are the source of truth. Changing percentages in config only logs a warning.
 
 ## Risk
 
 **Global** (`GlobalRiskEngine`):
-- The high-water mark updates whenever equity rises.
-- If realized losses over the last 24 hours or 7 days exceed their limits, new entries are blocked. The block clears itself as the window rolls forward.
-- If drawdown from the high-water mark reaches the limit, a persisted **halt** is set. Only `unhalt` clears it, and unhalting resets the high-water mark to current equity so the halt does not immediately trip again.
-- Gross exposure is open notional divided by total equity, and a new entry may not push it over the cap.
+- The high-water mark updates whenever marked equity rises, so unrealized gains raise it and giving them back counts as drawdown.
+- If realized losses over the last 24 hours or 7 days exceed their limits, new entries are blocked. The block clears itself as the window rolls forward. Unrealized losses do not count toward these limits.
+- If drawdown from the high-water mark reaches the limit, a persisted **halt** is set. Drawdown includes unrealized losses and is checked at the end of every bucket cycle, after every close, and at every heartbeat. Only `unhalt` clears it, and unhalting resets the high-water mark to current equity so the halt does not immediately trip again.
+- Gross exposure is the market value of open positions divided by total equity, and a new entry may not push it over the cap.
 
 **Per bucket** (`BucketRisk`): pause state, max concurrent positions, max position size, and a daily loss limit measured against the bucket's allocation.
 
@@ -100,7 +102,7 @@ SQLite through `node:sqlite`. The tables are:
 | `decisions` | Every pipeline outcome |
 | `risk_state` | Global halt and high-water mark, per-bucket pause |
 | `settings` | Wind-down flag and other switches |
-| `equity_snapshots` | Per-bucket and portfolio equity, taken at every heartbeat |
+| `equity_snapshots` | Per-bucket and portfolio marked equity and unrealized P&L, taken at every heartbeat |
 | `candles` | OHLC, quote volume and swap count per pool, timeframe and interval |
 
 ## Events
@@ -156,7 +158,7 @@ MarketData.start()
 ## Known limitations
 
 - `npm run status` runs as a separate process. It reads ledgers, positions and decisions correctly from the database, but `running` and each bucket's `detail` describe that process, not the running system. The planned localhost server (see `GUI_VISION.md`) will answer from the live process.
-- Equity values open positions at cost until mark-to-market is added (bucket 1, part 4).
+- Marks come from the same Uniswap pool the bucket trades on. There is no second price reference, so a manipulated pool price would move equity and could trip the drawdown halt. The outlier filter is the only guard.
 
 ## Adding a bucket
 
