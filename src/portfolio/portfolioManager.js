@@ -1,0 +1,369 @@
+// PortfolioManager — the top level. Runs each bucket on its own interval and
+// pushes every intent through the same pipeline:
+//
+//   bucket.evaluate → sizer → bucket risk → global risk → allocator → executor
+//
+// Every outcome (NO_TRADE, REJECTED, SHADOW, APPROVED, ERROR) is written to the
+// decisions table and emitted on the event bus.
+//
+// Events: 'decision', 'fill', 'close', 'risk', 'heartbeat', 'control'
+import { EventEmitter } from 'node:events';
+import { RESERVE_ID } from '../../config/portfolio.js';
+import { NO_TRADE, TRADE } from '../buckets/intent.js';
+import { PaperExecutor } from '../execution/paperExecutor.js';
+import { BucketRisk } from '../risk/bucketRisk.js';
+import { GlobalRiskEngine } from '../risk/globalRisk.js';
+import { sizePosition } from '../risk/positionSizer.js';
+import { E, TradingError } from '../shared/errors.js';
+import { createLogger } from '../shared/logger.js';
+import { CapitalAllocator } from './capitalAllocator.js';
+
+export const OUTCOME = {
+  NO_TRADE: 'NO_TRADE',
+  REJECTED: 'REJECTED',
+  SHADOW:   'SHADOW',
+  APPROVED: 'APPROVED',
+  ERROR:    'ERROR',
+};
+
+export class PortfolioManager {
+  /**
+   * @param {object} opts
+   * @param {object} opts.config
+   * @param {Store}  opts.store
+   * @param {BucketRegistry} opts.registry
+   * @param {object} [opts.liveAdapters] — { [bucketId]: ExecutionAdapter } (none exist in step 1)
+   * @param {Function} [opts.clock]
+   */
+  constructor({ config, store, registry, liveAdapters = {}, clock = Date.now }) {
+    this.config       = config;
+    this.store        = store;
+    this.registry     = registry;
+    this.liveAdapters = liveAdapters;
+    this.clock        = clock;
+    this.events       = new EventEmitter();
+    this.log          = createLogger('PORTFOLIO');
+
+    this.allocator  = new CapitalAllocator({ store, config, clock });
+    this.bucketRisk = new BucketRisk({ store, config, clock });
+    this.globalRisk = new GlobalRiskEngine({
+      store, config, clock,
+      getEquity:        () => this.allocator.totalEquity(),
+      getGrossExposure: () => this.allocator.totalInUse(),
+      onHalt:           e => this.events.emit('risk', { type: 'HALT', ...e, ts: this.clock() }),
+    });
+
+    this.paperExecutor = new PaperExecutor(config.paper);
+    this.executors     = new Map(); // bucketId → adapter (null for shadow)
+    this.windingDown   = false;
+    this._timers       = [];
+    this._busy         = new Set();
+    this._initialized  = false;
+    this.running       = false;
+  }
+
+  // Ledgers, persisted state and live gating. Safe to call without start().
+  init() {
+    if (this._initialized) return;
+    this.allocator.init();
+    this.windingDown = this.store.getSetting('windingDown') === '1';
+
+    const now = this.clock();
+    for (const bucket of this.registry.list()) {
+      if (!this.config.buckets[bucket.id]) throw new Error(`Bucket "${bucket.id}" has no config block`);
+      this.executors.set(bucket.id, this._resolveExecutor(bucket));
+      this.store.upsertBucket({ id: bucket.id, name: bucket.name, mode: bucket.mode, enabled: true }, now);
+    }
+    this.globalRisk.refresh();
+    this._initialized = true;
+  }
+
+  async start() {
+    this.init();
+    for (const bucket of this.registry.list()) {
+      await bucket.start(this._ctx(bucket));
+      const every = this.config.buckets[bucket.id].evaluateIntervalMs;
+      this._timers.push(setInterval(() => this.runBucketCycle(bucket.id), every));
+      this.log.info({ bucket: bucket.id, mode: bucket.mode, everyMs: every }, 'Bucket started');
+    }
+    this._timers.push(setInterval(() => this.heartbeat(), this.config.heartbeatIntervalMs));
+    this.running = true;
+    this.heartbeat();
+    for (const bucket of this.registry.list()) await this.runBucketCycle(bucket.id);
+    this.log.info({ mode: this.config.mode, buckets: this.registry.list().length }, 'Portfolio manager running');
+  }
+
+  async stop() {
+    for (const t of this._timers) clearInterval(t);
+    this._timers = [];
+    for (const bucket of this.registry.list()) await bucket.stop();
+    this.running = false;
+    this.log.info('Portfolio manager stopped');
+  }
+
+  // ---------------------------------------------------------------- cycle
+
+  async runBucketCycle(bucketId) {
+    const bucket = this.registry.get(bucketId);
+    if (!bucket) throw new TradingError(E.PM_UNKNOWN_BUCKET, bucketId);
+    if (this._busy.has(bucketId)) return;
+    this._busy.add(bucketId);
+    try {
+      await this._reviewExits(bucket);
+      await this._evaluateEntry(bucket);
+    } catch (err) {
+      this.log.error({ bucket: bucketId, err: err.message }, 'Bucket cycle failed');
+      this._decide(bucket, OUTCOME.ERROR, 'bucket', null, err.message, null);
+    } finally {
+      this._busy.delete(bucketId);
+    }
+  }
+
+  async _reviewExits(bucket) {
+    const open = this.store.getOpenPositions(bucket.id);
+    if (!open.length) return;
+    const requests = await bucket.reviewPositions(open, this._ctx(bucket));
+    for (const req of requests ?? []) {
+      await this.closePosition(req.positionId, req.price, req.reason);
+    }
+  }
+
+  async _evaluateEntry(bucket) {
+    const result = await bucket.evaluate(this._ctx(bucket));
+    if (!result || result.type === NO_TRADE) {
+      this._decide(bucket, OUTCOME.NO_TRADE, 'bucket', null, result?.reason ?? 'no setup', null);
+      return;
+    }
+    if (result.type !== TRADE) throw new Error(`Bucket returned unknown result type: ${result.type}`);
+    await this.processIntent(bucket.id, result);
+  }
+
+  // Exposed for tests and future manual tooling.
+  async processIntent(bucketId, intent) {
+    const bucket = this.registry.get(bucketId);
+    const reject = (stage, def, reason) => this._decide(bucket, OUTCOME.REJECTED, stage, def?.code ?? def, reason, intent);
+
+    if (this.globalRisk.isHalted()) return reject('portfolio', E.PM_HALTED, E.PM_HALTED.msg);
+    if (this.windingDown)          return reject('portfolio', E.PM_WINDING_DOWN, E.PM_WINDING_DOWN.msg);
+
+    const lim       = this.config.buckets[bucketId].risk;
+    const ledger    = this.allocator.ledger(bucketId);
+    const equityUsd = ledger.cash_usd + ledger.in_use_usd;
+    const size = sizePosition({
+      bucketEquityUsd:        equityUsd,
+      availableCashUsd:       ledger.cash_usd,
+      maxPositionPctOfBucket: lim.maxPositionPctOfBucket,
+      maxRiskPerTradePct:     lim.maxRiskPerTradePct,
+      confidence:             intent.confidence,
+      stopLossPct:            intent.stopLossPct,
+      requestedUsd:           intent.requestedUsd,
+    });
+    if (size <= 0) return reject('sizer', E.SIZE_ZERO, E.SIZE_ZERO.msg);
+
+    const br = this.bucketRisk.checkEntry(bucketId, size, { bucketEquityUsd: equityUsd, allocatedUsd: ledger.allocated_usd });
+    if (!br.ok) return reject('bucket_risk', br.code, br.reason);
+
+    const gr = this.globalRisk.checkEntry(size);
+    if (!gr.ok) return reject('global_risk', gr.code, gr.reason);
+
+    const sized = { ...intent, sizeUsd: size };
+    const executor = this.executors.get(bucketId);
+    if (!executor) {
+      return this._decide(bucket, OUTCOME.SHADOW, 'shadow', null, `would open $${size.toFixed(2)} ${intent.symbol}`, sized);
+    }
+
+    const res = this.allocator.reserve(bucketId, size);
+    if (!res.ok) return reject('allocator', res.code, res.reason);
+
+    let fill;
+    try {
+      fill = await executor.open({ bucketId, symbol: intent.symbol, side: intent.side, price: intent.price, notionalUsd: size });
+    } catch (err) {
+      this.allocator.release(bucketId, size, 0);
+      this.log.error({ bucket: bucketId, code: E.EXEC_FAILED.code, err: err.message }, 'Open failed');
+      return reject('executor', err.code ?? E.EXEC_FAILED.code, err.message);
+    }
+
+    const now = this.clock();
+    const positionId = this.store.insertPosition({
+      bucketId,
+      symbol:      intent.symbol,
+      side:        intent.side,
+      mode:        executor.isLive ? 'live' : 'paper',
+      venue:       fill.venue ?? executor.venue,
+      entryPrice:  fill.fillPrice,
+      qty:         fill.qty,
+      notionalUsd: size,
+      openFeeUsd:  fill.feeUsd,
+      stopLoss:    intent.stopLossPct ? fill.fillPrice * (1 - intent.stopLossPct) : null,
+      takeProfit:  intent.takeProfitPct ? fill.fillPrice * (1 + intent.takeProfitPct) : null,
+      reason:      intent.reason,
+      openedAt:    now,
+    });
+    this.store.insertTrade({
+      positionId, bucketId, action: 'OPEN', price: fill.fillPrice, qty: fill.qty,
+      notionalUsd: size, feeUsd: fill.feeUsd, mode: executor.isLive ? 'live' : 'paper', ts: now,
+    });
+
+    this._decide(bucket, OUTCOME.APPROVED, 'executor', null, `opened $${size.toFixed(2)} ${intent.symbol}`, { ...sized, positionId });
+    const position = this.store.getPosition(positionId);
+    this.log.info({ bucket: bucketId, positionId, symbol: intent.symbol, sizeUsd: size, price: fill.fillPrice }, 'Position opened');
+    this.events.emit('fill', { bucketId, position, ts: now });
+    bucket.onFill(position);
+    return position;
+  }
+
+  // Closing is always allowed — halts and pauses never block exits.
+  async closePosition(positionId, price, reason) {
+    const position = this.store.getPosition(positionId);
+    if (!position || position.status !== 'open') return null;
+
+    const bucket   = this.registry.get(position.bucket_id);
+    const executor = this.executors.get(position.bucket_id) ?? this.paperExecutor;
+    const fill     = await executor.close({ position, price });
+
+    const pnlUsd = fill.proceedsUsd - position.notional_usd - position.open_fee_usd - fill.feeUsd;
+    const now    = this.clock();
+    this.store.closePosition(positionId, { exitPrice: fill.fillPrice, closeFeeUsd: fill.feeUsd, pnlUsd, exitReason: reason, closedAt: now });
+    this.store.insertTrade({
+      positionId, bucketId: position.bucket_id, action: 'CLOSE', price: fill.fillPrice, qty: position.qty,
+      notionalUsd: fill.proceedsUsd, feeUsd: fill.feeUsd, mode: position.mode, ts: now,
+    });
+    this.allocator.release(position.bucket_id, position.notional_usd, pnlUsd);
+
+    const closed = this.store.getPosition(positionId);
+    this.log.info({ bucket: position.bucket_id, positionId, pnlUsd, reason }, 'Position closed');
+    this.events.emit('close', { bucketId: position.bucket_id, position: closed, pnlUsd, ts: now });
+    bucket?.onClose(closed);
+    this.globalRisk.refresh();
+    return closed;
+  }
+
+  // ------------------------------------------------------------ heartbeat
+
+  heartbeat() {
+    const ts = this.clock();
+    const risk = this.globalRisk.refresh();
+    for (const l of this.allocator.summary()) {
+      this.store.insertEquitySnapshot({ bucketId: l.bucketId, equityUsd: l.equityUsd, cashUsd: l.cashUsd, inUseUsd: l.inUseUsd, realizedPnlUsd: l.realizedPnlUsd, ts });
+    }
+    const totals = this.allocator.summary().reduce((a, l) => ({
+      cashUsd: a.cashUsd + l.cashUsd, inUseUsd: a.inUseUsd + l.inUseUsd, realizedPnlUsd: a.realizedPnlUsd + l.realizedPnlUsd,
+    }), { cashUsd: 0, inUseUsd: 0, realizedPnlUsd: 0 });
+    this.store.insertEquitySnapshot({ bucketId: 'portfolio', equityUsd: risk.equity, ...totals, ts });
+
+    const counts = this.store.decisionCountsSince(ts - this.config.heartbeatIntervalMs);
+    this.log.info({ equityUsd: +risk.equity.toFixed(2), drawdownPct: +(risk.drawdownPct * 100).toFixed(2), halted: this.globalRisk.isHalted(), decisions: counts }, 'Heartbeat');
+    this.events.emit('heartbeat', { ts, equityUsd: risk.equity, drawdownPct: risk.drawdownPct, decisions: counts });
+  }
+
+  // ------------------------------------------------------------- controls
+
+  pauseBucket(bucketId, reason) {
+    this._requireBucket(bucketId);
+    this.bucketRisk.pause(bucketId, reason);
+    this.events.emit('control', { type: 'PAUSE', bucketId, reason, ts: this.clock() });
+  }
+
+  resumeBucket(bucketId) {
+    this._requireBucket(bucketId);
+    this.bucketRisk.resume(bucketId);
+    this.events.emit('control', { type: 'RESUME', bucketId, ts: this.clock() });
+  }
+
+  setWindDown(on = true) {
+    this.windingDown = !!on;
+    this.store.setSetting('windingDown', on ? '1' : '0', this.clock());
+    this.log.warn({ windingDown: this.windingDown }, 'Wind-down toggled');
+    this.events.emit('control', { type: on ? 'WIND_DOWN' : 'WIND_DOWN_OFF', ts: this.clock() });
+  }
+
+  halt(reason = 'operator halt') {
+    this.globalRisk.halt(reason, E.PM_HALTED.code);
+  }
+
+  unhalt() {
+    this.globalRisk.unhalt();
+    this.events.emit('control', { type: 'UNHALT', ts: this.clock() });
+  }
+
+  // --------------------------------------------------------------- status
+
+  status() {
+    const ledgers = Object.fromEntries(this.allocator.summary().map(l => [l.bucketId, l]));
+    const dayAgo  = this.clock() - 24 * 60 * 60 * 1000;
+    const buckets = this.registry.list().map(b => {
+      const pause = this.bucketRisk.pauseState(b.id);
+      return {
+        id:            b.id,
+        name:          b.name,
+        mode:          b.mode,
+        executor:      this.executors.get(b.id)?.venue ?? 'none (shadow)',
+        paused:        pause.paused,
+        pauseReason:   pause.reason,
+        ...ledgers[b.id],
+        openPositions: this.store.getOpenPositions(b.id).length,
+        decisions24h:  this.store.decisionCountsSince(dayAgo, b.id),
+        lastDecision:  this.store.getRecentDecisions(1, b.id)[0] ?? null,
+        detail:        b.status(),
+      };
+    });
+    return {
+      mode:        this.config.mode,
+      running:     this.running,
+      windingDown: this.windingDown,
+      risk:        this.globalRisk.status(),
+      reserve:     ledgers[RESERVE_ID] ?? null,
+      buckets,
+    };
+  }
+
+  // -------------------------------------------------------------- helpers
+
+  _resolveExecutor(bucket) {
+    const cfg = this.config.buckets[bucket.id];
+    if (bucket.mode === 'shadow') return null;
+    if (bucket.mode === 'paper')  return this.paperExecutor;
+    if (bucket.mode !== 'live')   throw new Error(`Bucket "${bucket.id}" has invalid mode "${bucket.mode}"`);
+
+    const adapter = this.liveAdapters[bucket.id];
+    const problems = [];
+    if (this.config.mode !== 'live') problems.push('TRADING_MODE is not "live"');
+    if (cfg.live !== true)           problems.push('bucket config live !== true');
+    if (cfg.paperOnly)               problems.push('bucket is paperOnly');
+    if (!adapter?.isLive)            problems.push('no live execution adapter registered');
+    if (problems.length) {
+      throw new TradingError(E.PM_LIVE_GATE, `${bucket.id}: ${problems.join('; ')}`);
+    }
+    this.log.warn({ bucket: bucket.id, venue: adapter.venue }, 'LIVE execution enabled for bucket');
+    return adapter;
+  }
+
+  _requireBucket(bucketId) {
+    if (!this.registry.get(bucketId)) throw new TradingError(E.PM_UNKNOWN_BUCKET, bucketId);
+  }
+
+  _ctx(bucket) {
+    const ledger = this.allocator.ledger(bucket.id);
+    return {
+      now:           this.clock(),
+      bucketId:      bucket.id,
+      mode:          bucket.mode,
+      availableUsd:  ledger.cash_usd,
+      equityUsd:     ledger.cash_usd + ledger.in_use_usd,
+      openPositions: this.store.getOpenPositions(bucket.id),
+    };
+  }
+
+  _decide(bucket, outcome, stage, code, reason, intent) {
+    const ts = this.clock();
+    const id = this.store.insertDecision({ bucketId: bucket.id, outcome, stage, code, reason, intent, ts });
+    const decision = { id, bucketId: bucket.id, outcome, stage, code, reason, intent, ts };
+    if (outcome === OUTCOME.REJECTED) this.log.info({ bucket: bucket.id, stage, code, reason }, 'Intent rejected');
+    else this.log.debug({ bucket: bucket.id, outcome, reason }, 'Decision');
+    this.events.emit('decision', decision);
+    return decision;
+  }
+}
+
+export default PortfolioManager;

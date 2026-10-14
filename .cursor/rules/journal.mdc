@@ -1,0 +1,23 @@
+---
+description: Add a development journal entry at the end of every session that changes anything
+alwaysApply: true
+---
+
+# Development journal
+
+At the end of any session that changes code, config or docs, add an entry to the top of `docs/JOURNAL.md`, below the header and above the previous newest entry.
+
+Each entry covers:
+- Date and session, plus the bucket or area
+- What changed
+- Why
+- Decisions made (put lasting ones in `docs/DECISIONS.md` too)
+- Unvalidated parameters or assumptions
+- Anything not verified (for example, tests not run)
+- Next steps and open questions
+
+Write in plain, complete sentences for the user, not agent shorthand. Separate entries with `---`.
+
+`CHANGELOG.md` stays separate: a terse one-line entry for each trading-logic change or bug fix.
+
+Keep `docs/VISION.md` section 12 (build status) current. It is the only copy of the vision document.

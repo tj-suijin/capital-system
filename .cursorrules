@@ -1,0 +1,7 @@
+# Agent Boundaries
+- NEVER commit code without user review strings.
+- NEVER modify or delete `.env` files.
+- ALWAYS use Pino structured JSON logging for new error outputs.
+
+# Documentation
+- Whenever you make a code edit that alters trading logic or fixes a bug, automatically append a 1-line summary to CHANGELOG.md under the current version.

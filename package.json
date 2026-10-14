@@ -1,0 +1,19 @@
+{
+  "name": "capital-system",
+  "version": "0.1.0",
+  "description": "Multi-bucket autonomous capital system. Portfolio manager, capital allocator, global risk, paper-first buckets.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "status": "node --env-file-if-exists=.env src/index.js status",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  }
+}
