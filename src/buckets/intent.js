@@ -11,14 +11,17 @@ export function noTrade(reason) {
   return { type: NO_TRADE, reason: String(reason ?? 'no setup') };
 }
 
-export function tradeIntent({ symbol, side = 'BUY', price, confidence = 1, stopLossPct = null, takeProfitPct = null, requestedUsd = null, reason }) {
+// `tag` is stored on the position so the bucket can recognise it later
+// (e.g. which strategy opened it).
+export function tradeIntent({ symbol, side = 'BUY', price, confidence = 1, stopLossPct = null, takeProfitPct = null, requestedUsd = null, reason, tag = null }) {
   if (!symbol) throw new Error('tradeIntent: symbol required');
   if (side !== 'BUY') throw new Error(`tradeIntent: unsupported side ${side} (step 1 is long-only)`);
   if (!(price > 0)) throw new Error('tradeIntent: price must be > 0');
   if (!(confidence >= 0 && confidence <= 1)) throw new Error('tradeIntent: confidence must be in [0,1]');
   if (stopLossPct != null && !(stopLossPct > 0 && stopLossPct < 1)) throw new Error('tradeIntent: stopLossPct must be in (0,1)');
   if (!reason) throw new Error('tradeIntent: reason required');
-  return { type: TRADE, symbol, side, price, confidence, stopLossPct, takeProfitPct, requestedUsd, reason };
+  if (takeProfitPct != null && !(takeProfitPct > 0)) throw new Error('tradeIntent: takeProfitPct must be > 0');
+  return { type: TRADE, symbol, side, price, confidence, stopLossPct, takeProfitPct, requestedUsd, reason, tag };
 }
 
 // From reviewPositions(): ask the portfolio manager to close an open position.

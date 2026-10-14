@@ -13,7 +13,7 @@ const log = createLogger('MAIN');
 
 function build() {
   const store     = getStore();
-  const registry  = createDefaultRegistry(CONFIG);
+  const registry  = createDefaultRegistry(CONFIG, { store });
   const portfolio = new PortfolioManager({ config: CONFIG, store, registry });
   const api       = new ControlApi({ portfolio, store });
   return { store, portfolio, api };

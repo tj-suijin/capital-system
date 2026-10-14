@@ -198,6 +198,7 @@ export class PortfolioManager {
       stopLoss:    intent.stopLossPct ? fill.fillPrice * (1 - intent.stopLossPct) : null,
       takeProfit:  intent.takeProfitPct ? fill.fillPrice * (1 + intent.takeProfitPct) : null,
       reason:      intent.reason,
+      tag:         intent.tag,
       openedAt:    now,
     });
     this.store.insertTrade({

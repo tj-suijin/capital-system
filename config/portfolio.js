@@ -52,6 +52,14 @@ export const CONFIG = {
         staleAfterMs:      120_000, // no tick for this long → reconnect
         logChunkBlocks:    2_000,   // starting eth_getLogs range; halves on provider limits
       },
+      trade: {
+        symbol:           'ETH/USDC',
+        maxHoldMs:        4 * 3_600_000, // user's choice — UNVALIDATED
+        minStopPct:       0.003,  // UNVALIDATED — tighter strategy stops are widened to this
+        maxStopPct:       0.03,   // UNVALIDATED — wider strategy stops are tightened to this
+        minTargetPct:     0.004,  // UNVALIDATED — targets closer than this don't cover round-trip costs
+        marketRetryMs:    60_000, // retry interval if market data fails to start
+      },
       // Ported from trading-bot. Every number is UNVALIDATED.
       strategy: {
         minConfidence: 0.55, // on strategy confidence × regime confidence

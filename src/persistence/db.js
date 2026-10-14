@@ -63,6 +63,7 @@ export class Store {
         stop_loss     REAL,
         take_profit   REAL,
         intent_reason TEXT,
+        tag           TEXT,
         status        TEXT    NOT NULL DEFAULT 'open',
         opened_at     INTEGER NOT NULL,
         exit_price    REAL,
@@ -137,6 +138,13 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_decisions_bucket_ts     ON decisions (bucket_id, ts);
       CREATE INDEX IF NOT EXISTS idx_equity_bucket_ts        ON equity_snapshots (bucket_id, ts);
     `);
+    this._addColumn('positions', 'tag', 'TEXT');
+  }
+
+  // For databases created before a column existed.
+  _addColumn(table, column, type) {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!cols.some(c => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
 
   // ---- Buckets ----
@@ -171,11 +179,11 @@ export class Store {
   insertPosition(p) {
     const r = this.db.prepare(`
       INSERT INTO positions (bucket_id, symbol, side, mode, venue, entry_price, qty, notional_usd,
-        open_fee_usd, stop_loss, take_profit, intent_reason, opened_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        open_fee_usd, stop_loss, take_profit, intent_reason, tag, opened_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       p.bucketId, p.symbol, p.side, p.mode, p.venue, p.entryPrice, p.qty, p.notionalUsd,
-      p.openFeeUsd, p.stopLoss ?? null, p.takeProfit ?? null, p.reason ?? null, p.openedAt,
+      p.openFeeUsd, p.stopLoss ?? null, p.takeProfit ?? null, p.reason ?? null, p.tag ?? null, p.openedAt,
     );
     return Number(r.lastInsertRowid);
   }

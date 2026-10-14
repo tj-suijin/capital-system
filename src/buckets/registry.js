@@ -1,10 +1,17 @@
 // Bucket registry. Real bucket implementations replace the NullBucket
 // factories here as they are built (one bucket at a time).
+import * as ethers from 'ethers';
+import { MarketData } from '../data/marketData.js';
+import { LiquidDirectionalBucket } from './liquidDirectional/liquidDirectionalBucket.js';
 import { NullBucket } from './null/nullBucket.js';
 
+// deps: { store, chain }
 const FACTORIES = {
-  liquidDirectional: (id, cfg) => new NullBucket({ id, config: cfg }),
-  degenMemecoin:     (id, cfg) => new NullBucket({ id, config: cfg }),
+  liquidDirectional: (id, cfg, deps) => new LiquidDirectionalBucket({
+    id, config: cfg,
+    market: new MarketData({ ethers, store: deps.store, market: cfg.market, chain: deps.chain }),
+  }),
+  degenMemecoin: (id, cfg) => new NullBucket({ id, config: cfg }),
 };
 
 export class BucketRegistry {
@@ -27,13 +34,13 @@ export class BucketRegistry {
   }
 }
 
-export function createDefaultRegistry(config) {
+export function createDefaultRegistry(config, deps = {}) {
   const registry = new BucketRegistry();
   for (const [id, cfg] of Object.entries(config.buckets)) {
     if (!cfg.enabled) continue;
     const factory = FACTORIES[id];
     if (!factory) throw new Error(`No bucket implementation registered for "${id}"`);
-    registry.register(factory(id, cfg));
+    registry.register(factory(id, cfg, { chain: config.chain, ...deps }));
   }
   return registry;
 }

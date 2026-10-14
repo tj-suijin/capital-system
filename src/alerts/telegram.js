@@ -149,6 +149,11 @@ export class TelegramControl {
         `  Equity ${usd(b.equityUsd)} | P&amp;L ${usd(b.realizedPnlUsd)} | Open ${b.openPositions}`,
         `  24h: ${d.NO_TRADE ?? 0} no-trade, ${d.REJECTED ?? 0} rejected, ${d.APPROVED ?? 0} opened`,
       );
+      if (b.detail?.regime) {
+        lines.push(`  Regime: ${esc(b.detail.regime.regime)} ${pct(b.detail.regime.confidence)} — ${esc(b.detail.lastView)}`);
+      } else if (b.detail?.ready === false) {
+        lines.push(`  ⚠️ Market data not running${b.detail.startError ? `: ${esc(b.detail.startError)}` : ''}`);
+      }
     }
     return lines.join('\n');
   }

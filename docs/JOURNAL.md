@@ -4,6 +4,32 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 13, 2026 (session 3, continued): Bucket 1, the bucket itself
+
+**Area:** LiquidDirectional bucket, part 3 of 5. Parts 1 and 2 were committed as `d361a61`.
+
+**What changed:**
+- `LiquidDirectionalBucket` replaces the placeholder for bucket 1. It starts its own market data, turns the analyst's view into trade intents, and asks for exits.
+- **Entry checks:** no trade while market data is down, the feed is stale, the candles have a gap, or the history is still warming up. The strategy's stop must be below the price, and its distance is clamped to between 0.3% and 3%. A target must be at least 0.4% away so it covers the round-trip costs of about 0.3%.
+- **Exits:** stop loss, take profit, the opening strategy's own exit signal, and the 4-hour time limit the user chose. They are checked every minute at the live pool price, and deferred while the feed is stale.
+- Positions now have a `tag` column (the strategy that opened them). Existing databases get the column added automatically.
+- If market data fails to start, the bucket answers no-trade and retries every minute instead of stopping the system.
+- Telegram `/status` shows bucket 1's regime and its latest reasoning, or a warning if market data is down.
+- 7 new tests (57 in total, all passing), including a full trip through the portfolio pipeline: a paper position opens on a mean-reversion dip and closes at its stop.
+
+**Live check:** `npm start` ran for about 2 minutes on the real feed. It created the ledgers (\$600 for bucket 1, \$30 for the degen bucket, \$370 in reserve), verified the pool, backfilled only the 10 missing minutes in 0.2 seconds, and recorded "no trade" decisions with real reasons (for example, a mean-reversion exit signal near the upper band). No positions were opened.
+
+**Known limitation:** `npm run status` runs as a separate process, so its `running` flag and each bucket's `detail` describe that process, not the running system. The decisions, ledgers and positions it shows are correct.
+
+**Unvalidated:** the stop clamp (0.3%–3%), the 0.4% minimum target, and the 4-hour limit.
+
+**Next steps:**
+1. The user reviews and commits.
+2. Part 4: mark-to-market valuation of open positions, so equity, drawdown and the halt reflect the live price.
+3. Part 5: the long paper run.
+
+---
+
 ## October 13, 2026 (session 3): Bucket 1, market data and strategies
 
 **Area:** LiquidDirectional bucket (v1 step 3), parts 1 and 2 of 5.

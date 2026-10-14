@@ -72,6 +72,16 @@ Each entry records what was decided, why, and whether it can be revisited. The f
 
 **Long-only: a downtrend means no entries.**
 
+**Stops are clamped to between 0.3% and 3% below entry.** One-minute swing lows can sit almost at the price, which would make the risk-based size cap meaningless and get stopped out by noise. Stops much wider than 3% are not what these short-hold strategies intend. A strategy stop at or above the price means no trade.
+
+**Targets must be at least 0.4% away.** The paper round trip costs about 0.3% (a 0.05% fee and 0.10% slippage, each way). A closer target would lose money even when it's hit. Trend following has no target; it exits on its own signal, the stop or the time limit.
+
+**Exits wait for a live price.** When the feed is stale, no exit is requested, because a paper fill at an old price would misstate P&L, and a live fill would need a fresh quote anyway. Exits resume as soon as the feed recovers.
+
+**If market data fails to start, the bucket answers no-trade and retries every minute.** The whole system keeps running, so an RPC outage at boot doesn't take down the other buckets or Telegram.
+
+**Positions carry a `tag`** (the strategy that opened them), so only that strategy's exit signal closes them.
+
 **Time limit: a position closes after 4 hours** if neither the stop, the target nor a strategy exit has triggered (user's choice, Oct 13, 2026). This frees stuck capital. The old bot aimed for 15-minute to 2-hour holds but never enforced them. UNVALIDATED.
 
 ## Unvalidated parameters
@@ -99,6 +109,9 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 | Bucket 1: outlier filter | 2% from the median of the last 21 prices |
 | Bucket 1: stale feed | 2 minutes without a swap |
 | Bucket 1: gap fill | up to 5 candles |
+| Bucket 1: stop clamp | 0.3% to 3% below entry |
+| Bucket 1: minimum target distance | 0.4% |
+| Bucket 1: max hold | 4 hours |
 
 ## Open questions
 

@@ -251,11 +251,11 @@ Docs written in session 2: `docs/JOURNAL.md`, `.cursor/rules/journal.mdc`, `CHAN
 
 The shell and docs were committed by the user on October 13, 2026 (commit `f06ec15`) and pushed to the private GitHub repo https://github.com/tj-suijin/capital-system.
 
-**Bucket 1 (LiquidDirectional), in progress.** Parts 1 and 2 of 5 are coded and tested (50 tests passing) and are waiting for the user's review:
+**Bucket 1 (LiquidDirectional), in progress.** Parts 1 and 2 of 5 are coded, tested (50 tests passing), reviewed and committed (`d361a61`):
 1. Done: market data for the Uniswap V3 WETH/USDC 0.05% pool on Base (on-chain verification, backfill, live stream, candles). Verified against the live chain with the user's Alchemy key.
 2. Done: indicators (with the ADX and RSI fixes), regime detector, both strategies, and the analyst.
-3. Next: the bucket class (entries, exits, stale-data and stop sanity checks).
-4. Then: mark-to-market valuation.
+3. Done, waiting for review: the bucket class (entries, exits including the 4-hour limit, stale-data and stop sanity checks). 57 tests passing; ran live with `npm start`.
+4. Next: mark-to-market valuation.
 5. Then: the paper run.
 
 See `docs/JOURNAL.md` for details.

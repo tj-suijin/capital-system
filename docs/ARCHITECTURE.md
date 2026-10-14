@@ -144,7 +144,19 @@ MarketData.start()
 | `TRENDING_DOWN` | none (long-only) |
 | `UNCERTAIN` | none |
 
-`analyze()` returns a view of the form `{ regime, entry | null, noTradeReason, exits, signals }`. `exits` holds each strategy's current exit signal, whatever the regime, so positions can be closed by the strategy that opened them. The bucket class that turns this view into intents is the next step.
+`analyze()` returns a view of the form `{ regime, entry | null, noTradeReason, exits, signals }`. `exits` holds each strategy's current exit signal, whatever the regime, so positions can be closed by the strategy that opened them.
+
+`LiquidDirectionalBucket` turns the view into intents. It analyzes once per cycle, and the result is shared by the exit review and the entry check.
+
+- **No trade** if market data isn't running, the feed is stale, the last 200 five-minute or 60 one-minute candles have a gap, or the analyst has no entry.
+- **Entry:** the stop must be below the live price, and its distance is clamped to 0.3%–3%. A target must be at least 0.4% away. The intent carries `tag` (the strategy), which is stored on the position.
+- **Exits,** checked first in every cycle at the live price: stop loss, take profit, the opening strategy's exit signal, and the 4-hour limit. No exits are requested while the feed is stale.
+- **Startup:** `start()` starts its `MarketData`. If that fails, the bucket answers no-trade and retries every minute.
+
+## Known limitations
+
+- `npm run status` runs as a separate process. It reads ledgers, positions and decisions correctly from the database, but `running` and each bucket's `detail` describe that process, not the running system. The planned localhost server (see `GUI_VISION.md`) will answer from the live process.
+- Equity values open positions at cost until mark-to-market is added (bucket 1, part 4).
 
 ## Adding a bucket
 

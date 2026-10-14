@@ -20,3 +20,6 @@ Terse list of trading-logic changes and bug fixes. The narrative history lives i
 - Fix (from trading-bot): the trend-following stop uses the swing low of candle lows, not closes.
 - Ported regime detector, trend following and mean reversion with unchanged scoring; the analyst also reports each strategy's exit signal whatever the regime.
 - Short gaps in candles (up to 5 intervals) are forward-filled flat; longer gaps are left empty.
+- LiquidDirectional bucket replaces the placeholder: entries via the analyst; no trade on stale feed, candle gaps, warm-up, or market data down (retried every 60s).
+- Bucket 1 entries: the stop must be below price, its distance is clamped to 0.3%–3%, and a target must be at least 0.4% away to cover round-trip costs.
+- Bucket 1 exits, checked every cycle at the live pool price: stop loss, take profit, the opening strategy's exit signal (via the position's new `tag`), and a 4-hour time limit. Exits are deferred while the feed is stale.
