@@ -1,6 +1,6 @@
 # Architecture
 
-This describes the code as it stands after v1 step 1 (the portfolio shell). The reasons behind the choices are in `DECISIONS.md`.
+This describes the code as it stands after bucket 1 part 5 (the paper run setup). The reasons behind the choices are in `DECISIONS.md`.
 
 ## Shape
 
@@ -13,10 +13,13 @@ src/index.js
       ├── sizePosition                   src/risk/positionSizer.js
       ├── BucketRegistry → buckets       src/buckets/
       ├── executors (one per bucket)     src/execution/
+      ├── HealthMonitor                  src/portfolio/healthMonitor.js
       └── events (EventEmitter)
  ControlApi                              src/control/controlApi.js
+ ├── summarizeWindow                     src/portfolio/runSummary.js
  └── TelegramControl                     src/alerts/telegram.js
  Store (SQLite)                          src/persistence/db.js
+ scripts/paper-run.ps1                   restart supervisor around src/index.js
 ```
 
 ## The rule of ownership
@@ -101,17 +104,27 @@ SQLite through `node:sqlite`. The tables are:
 | `trades` | Every open and close fill |
 | `decisions` | Every pipeline outcome |
 | `risk_state` | Global halt and high-water mark, per-bucket pause |
-| `settings` | Wind-down flag and other switches |
+| `settings` | Wind-down flag, the run start time (`runStartedAt`) and the clean-shutdown flag |
 | `equity_snapshots` | Per-bucket and portfolio marked equity and unrealized P&L, taken at every heartbeat |
 | `candles` | OHLC, quote volume and swap count per pool, timeframe and interval |
+| `system_events` | Process starts (with whether the previous stop was clean) and stops, data outages, error bursts, halts and operator actions |
 
 ## Events
 
-`PortfolioManager.events` emits `decision`, `fill`, `close`, `risk`, `heartbeat` and `control`. `ControlApi.on()` exposes the same events and returns an unsubscribe function.
+`PortfolioManager.events` emits `decision`, `fill`, `close`, `risk`, `heartbeat`, `control` and `alert`. `ControlApi.on()` exposes the same events and returns an unsubscribe function.
 
 ## Heartbeat
 
-Every 5 minutes the manager refreshes global risk, writes equity snapshots, and logs equity, drawdown, halt state and decision counts.
+Every 5 minutes the manager refreshes global risk, writes equity snapshots, and logs equity, drawdown, halt state, decision counts, memory use and each live feed's reconnect count.
+
+## Running unattended
+
+- **Supervisor.** `npm run paper` runs `scripts/paper-run.ps1`, which starts `src/index.js` and restarts it after a crash (15 seconds, doubling up to 5 minutes). Exit code 0 (a clean stop) and 3 (another copy holds the lock) end the supervisor. After 5 crashes within an hour it stops and sends a Telegram message through `src/tools/notify.js`. `scripts/install-task.ps1` registers it as a Windows scheduled task at logon.
+- **Single instance.** `src/index.js` and `npm run market` take `data/capital.lock` (next to the database). A lock whose process is gone is taken over.
+- **Crashes.** An uncaught exception is logged as fatal and exits with code 1. A `cleanShutdown` flag in `settings` is cleared at start and set by a clean stop, so the next start knows whether the previous one crashed, was killed or lost power.
+- **Health alerts.** After every bucket cycle, `HealthMonitor` checks the bucket's `health(now)`. A feed that has not been healthy for 10 minutes raises one `DATA_DOWN` alert, and `DATA_UP` when it recovers. Ten error log lines within 10 minutes raise `ERROR_BURST`, at most once an hour (Telegram's own errors are not counted).
+- **Digests.** Telegram sends a digest at 08:00 and 21:00 local time, built from `ControlApi.getRunSummary()`. A missing digest means the system is down.
+- **Report.** `npm run report` summarizes the run window from the database and the log files into `reports/` (read-only, safe while running).
 
 ## Market data (bucket 1)
 
@@ -151,7 +164,7 @@ MarketData.start()
 `LiquidDirectionalBucket` turns the view into intents. It analyzes once per cycle, and the result is shared by the exit review and the entry check.
 
 - **No trade** if market data isn't running, the feed is stale, the last 200 five-minute or 60 one-minute candles have a gap, or the analyst has no entry.
-- **Entry:** the stop must be below the live price, and its distance is clamped to 0.3%–3%. A target must be at least 0.4% away. The intent carries `tag` (the strategy), which is stored on the position.
+- **Entry:** the stop must be below the live price, and its distance is clamped to 0.3%–3%. A target must be at least 0.4% away. The portfolio manager places both as percentages of the intent's price (the market price), not the fill price. The intent carries `tag` (the strategy), which is stored on the position.
 - **Exits,** checked first in every cycle at the live price: stop loss, take profit, the opening strategy's exit signal, and the 4-hour limit. No exits are requested while the feed is stale.
 - **Startup:** `start()` starts its `MarketData`. If that fails, the bucket answers no-trade and retries every minute.
 

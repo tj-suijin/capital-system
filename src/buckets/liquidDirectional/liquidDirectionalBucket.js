@@ -25,7 +25,9 @@ export class LiquidDirectionalBucket extends Bucket {
   constructor({ id, config, market }) {
     super({ id, config });
     this.market   = market;
-    this.params   = config.strategy;
+    // paperMinConfidence applies only to paper fills; shadow and live keep minConfidence.
+    const s = config.strategy;
+    this.params   = this.mode === 'paper' && s.paperMinConfidence != null ? { ...s, minConfidence: s.paperMinConfidence } : s;
     this.trade    = config.trade;
     this.tfMs     = config.market.timeframes;
     this.log      = createLogger('BUCKET:LD');
@@ -98,7 +100,7 @@ export class LiquidDirectionalBucket extends Bucket {
   // ----------------------------------------------------------------- exit
 
   async reviewPositions(open, ctx) {
-    if (!this.ready || this.market.isStale(ctx.now)) {
+    if (this._feedProblem(ctx.now)) {
       if (open.length) this.log.warn({ open: open.length }, 'Price feed not live — exits deferred');
       return [];
     }
@@ -131,24 +133,49 @@ export class LiquidDirectionalBucket extends Bucket {
     return last ? { price: last.close, ts: last.ts } : null;
   }
 
+  // The current price only while the feed is live; otherwise null. Other
+  // buckets that share this feed (the exerciser) trade and exit on this.
+  livePrice(now) {
+    if (this._feedProblem(now)) return null;
+    return { price: this.market.lastPrice, ts: this.market.lastTickAt };
+  }
+
   // --------------------------------------------------------------- status
+
+  health(now) {
+    const reason = this._feedProblem(now);
+    return {
+      ok:         !reason,
+      reason,
+      lastTickAt: this.market.lastTickAt ?? null,
+      reconnects: this.ready ? (this.market.status().stream?.reconnects ?? 0) : null,
+    };
+  }
 
   status() {
     const v = this._view?.view;
     return {
-      ready:      this.ready,
-      startError: this.startErr,
-      market:     this.ready ? this.market.status() : null,
-      regime:     v ? { regime: v.regime.regime, confidence: v.regime.confidence } : null,
-      lastView:   v ? (v.entry ? `entry: ${v.entry.strategy}` : v.noTradeReason) : null,
+      ready:         this.ready,
+      startError:    this.startErr,
+      market:        this.ready ? this.market.status() : null,
+      regime:        v ? { regime: v.regime.regime, confidence: v.regime.confidence } : null,
+      lastView:      v ? (v.entry ? `entry: ${v.entry.strategy}` : v.noTradeReason) : null,
+      minConfidence: this.params.minConfidence,
     };
   }
 
   // -------------------------------------------------------------- helpers
 
-  _dataProblem(now) {
+  _feedProblem(now) {
     if (!this.ready) return `market data not running${this.startErr ? ` (${this.startErr})` : ''}`;
+    if (this.market.lastTickAt == null) return 'waiting for first live swap';
     if (this.market.isStale(now)) return 'price feed stale';
+    return null;
+  }
+
+  _dataProblem(now) {
+    const feed = this._feedProblem(now);
+    if (feed) return feed;
     const { regime, entry } = this.params;
     for (const [tf, min] of [[regime.timeframe, regime.minCandles], [entry.timeframe, entry.minCandles]]) {
       const rows = this.market.getCandles(tf, min);

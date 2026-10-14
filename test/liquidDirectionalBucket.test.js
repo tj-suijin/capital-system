@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import nodePath from 'node:path';
 import { test } from 'node:test';
 import { CONFIG } from '../config/portfolio.js';
 import { NO_TRADE, TRADE } from '../src/buckets/intent.js';
 import { LiquidDirectionalBucket } from '../src/buckets/liquidDirectional/liquidDirectionalBucket.js';
 import { BucketRegistry } from '../src/buckets/registry.js';
-import { openStore } from '../src/persistence/db.js';
+import { Store, openStore } from '../src/persistence/db.js';
 import { PortfolioManager } from '../src/portfolio/portfolioManager.js';
 import { fakeClock, testConfig } from './helpers.js';
 
@@ -114,6 +117,17 @@ test('LD bucket: no trade on stale feed, gaps, warm-up, or market data down', as
   await b4.stop();
 });
 
+test('LD bucket: paperMinConfidence applies only in paper mode', async () => {
+  const paper = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: LD, market: new FakeMarket() });
+  assert.equal(paper.params.minConfidence, LD.strategy.paperMinConfidence);
+  assert.equal(paper.status().minConfidence, LD.strategy.paperMinConfidence);
+  for (const mode of ['shadow', 'live']) {
+    const b = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: { ...LD, mode }, market: new FakeMarket() });
+    assert.equal(b.params.minConfidence, LD.strategy.minConfidence);
+  }
+  assert.ok(LD.strategy.paperMinConfidence < LD.strategy.minConfidence);
+});
+
 // ---- exits ----
 
 const pos = (over = {}) => ({ id: 1, stop_loss: null, take_profit: null, tag: 'mean_reversion', opened_at: NOW - MIN, ...over });
@@ -139,6 +153,18 @@ test('LD bucket: exits on stop, target, the opening strategy\'s signal, and time
 test('LD bucket: no exits are requested without a live price', async () => {
   const { bucket, market } = await makeBucket();
   market.stale = true;
+  assert.deepEqual(await bucket.reviewPositions([pos({ stop_loss: 1e9 })], ctx()), []);
+});
+
+test('LD bucket: before the first live swap it says so, and reports itself unhealthy', async () => {
+  const { bucket, market } = await makeBucket();
+  assert.deepEqual(bucket.health(NOW), { ok: true, reason: null, lastTickAt: NOW, reconnects: 0 });
+  assert.deepEqual(bucket.livePrice(NOW), { price: market.lastPrice, ts: NOW });
+
+  market.lastTickAt = null;
+  assert.equal((await bucket.evaluate(ctx())).reason, 'waiting for first live swap');
+  assert.equal(bucket.health(NOW).ok, false);
+  assert.equal(bucket.livePrice(NOW), null);
   assert.deepEqual(await bucket.reviewPositions([pos({ stop_loss: 1e9 })], ctx()), []);
 });
 
@@ -186,4 +212,49 @@ test('LD bucket: paper position opens through the pipeline and closes at its sto
   assert.equal(closed.status, 'closed');
   assert.match(closed.exit_reason, /^stop loss/);
   assert.ok(closed.pnl_usd < 0);
+});
+
+// ---- restart with an open position ----
+
+test('LD bucket: after a restart, open positions keep their stops and the time limit still applies', async t => {
+  const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'cs-restart-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dbPath = nodePath.join(dir, 'capital.db');
+  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60 } } };
+  const boot = async (clock, market = new FakeMarket()) => {
+    const store = new Store(dbPath);
+    const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });
+    const pm = new PortfolioManager({ config, store, registry: new BucketRegistry().register(bucket), clock });
+    pm.init();
+    await bucket.start();
+    return { store, pm, market };
+  };
+
+  // First process: opens two positions, then dies without stop().
+  const a = await boot(fakeClock(NOW));
+  await a.pm.runBucketCycle('liquidDirectional');
+  await a.pm.runBucketCycle('liquidDirectional');
+  const before = a.store.getOpenPositions();
+  assert.equal(before.length, 2);
+  const ledgerBefore = a.store.getLedger('liquidDirectional');
+  a.store.close();
+
+  // Second process, 5 hours later: the price sits between stop and target,
+  // so only the 4-hour limit can close them.
+  const b = await boot(fakeClock(NOW + 5 * 3_600_000));
+  assert.deepEqual(b.store.getOpenPositions().map(p => p.id), before.map(p => p.id));
+  assert.deepEqual(b.store.getLedger('liquidDirectional'), ledgerBefore);
+  b.market.stale = true;
+  await b.pm.runBucketCycle('liquidDirectional');
+  assert.equal(b.store.getOpenPositions().length, 2, 'no exits without a live price');
+
+  b.market.stale = false;
+  await b.pm.runBucketCycle('liquidDirectional');
+  const closed = before.map(p => b.store.getPosition(p.id));
+  assert.ok(closed.every(p => p.status === 'closed' && /^time limit/.test(p.exit_reason)), closed.map(p => p.exit_reason).join(', '));
+
+  const l = b.store.getLedger('liquidDirectional');
+  assert.ok(Math.abs(l.in_use_usd - b.store.getOpenPositions().reduce((n, p) => n + p.notional_usd, 0)) < 1e-6);
+  assert.ok(Math.abs(l.cash_usd + l.in_use_usd - (l.allocated_usd + l.realized_pnl_usd)) < 1e-6);
+  b.store.close();
 });

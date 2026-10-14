@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
+    "paper": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/paper-run.ps1",
     "status": "node --env-file-if-exists=.env src/index.js status",
+    "report": "node --env-file-if-exists=.env src/tools/report.js",
     "market": "node --env-file-if-exists=.env src/tools/market.js",
     "test": "node --test \"test/**/*.test.js\""
   },

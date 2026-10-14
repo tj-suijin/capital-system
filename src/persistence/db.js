@@ -134,7 +134,19 @@ export class Store {
         PRIMARY KEY (pool, timeframe, ts)
       );
 
+      -- Process starts and stops, data outages, error bursts, halts and operator actions.
+      CREATE TABLE IF NOT EXISTS system_events (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        type        TEXT    NOT NULL,
+        bucket_id   TEXT,
+        detail_json TEXT,
+        ts          INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_positions_bucket_status ON positions (bucket_id, status);
+      CREATE INDEX IF NOT EXISTS idx_positions_opened_at     ON positions (opened_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_ts            ON decisions (ts);
+      CREATE INDEX IF NOT EXISTS idx_system_events_ts        ON system_events (ts);
       CREATE INDEX IF NOT EXISTS idx_positions_closed_at     ON positions (closed_at);
       CREATE INDEX IF NOT EXISTS idx_decisions_bucket_ts     ON decisions (bucket_id, ts);
       CREATE INDEX IF NOT EXISTS idx_equity_bucket_ts        ON equity_snapshots (bucket_id, ts);
@@ -208,6 +220,14 @@ export class Store {
     return this.db.prepare("SELECT * FROM positions WHERE status='open' ORDER BY opened_at").all();
   }
 
+  positionsOpenedBetween(sinceMs, untilMs) {
+    return this.db.prepare('SELECT * FROM positions WHERE opened_at >= ? AND opened_at < ? ORDER BY opened_at').all(sinceMs, untilMs);
+  }
+
+  positionsClosedBetween(sinceMs, untilMs) {
+    return this.db.prepare("SELECT * FROM positions WHERE status='closed' AND closed_at >= ? AND closed_at < ? ORDER BY closed_at").all(sinceMs, untilMs);
+  }
+
   insertTrade(t) {
     this.db.prepare(`
       INSERT INTO trades (position_id, bucket_id, action, price, qty, notional_usd, fee_usd, mode, ts)
@@ -245,6 +265,15 @@ export class Store {
       ? this.db.prepare('SELECT * FROM decisions WHERE bucket_id=? ORDER BY ts DESC, id DESC LIMIT ?').all(bucketId, limit)
       : this.db.prepare('SELECT * FROM decisions ORDER BY ts DESC, id DESC LIMIT ?').all(limit);
     return rows.map(r => ({ ...r, intent: r.intent_json ? JSON.parse(r.intent_json) : null }));
+  }
+
+  // Grouped by bucket, outcome, stage, code and exact reason, for summaries.
+  decisionGroupsBetween(sinceMs, untilMs) {
+    return this.db.prepare(`
+      SELECT bucket_id, outcome, stage, code, reason, COUNT(*) AS n
+      FROM decisions WHERE ts >= ? AND ts < ?
+      GROUP BY bucket_id, outcome, stage, code, reason
+    `).all(sinceMs, untilMs);
   }
 
   decisionCountsSince(sinceMs, bucketId = null) {
@@ -287,6 +316,21 @@ export class Store {
     `).run(s.bucketId, s.equityUsd, s.cashUsd, s.inUseUsd, s.realizedPnlUsd, s.unrealizedPnlUsd ?? 0, s.ts);
   }
 
+  equitySnapshotsBetween(bucketId, sinceMs, untilMs) {
+    return this.db.prepare('SELECT * FROM equity_snapshots WHERE bucket_id = ? AND ts >= ? AND ts < ? ORDER BY ts').all(bucketId, sinceMs, untilMs);
+  }
+
+  // ---- System events ----
+  insertEvent({ type, bucketId = null, detail = null, ts }) {
+    this.db.prepare('INSERT INTO system_events (type, bucket_id, detail_json, ts) VALUES (?, ?, ?, ?)')
+      .run(type, bucketId, detail ? JSON.stringify(detail) : null, ts);
+  }
+
+  eventsBetween(sinceMs, untilMs) {
+    return this.db.prepare('SELECT * FROM system_events WHERE ts >= ? AND ts < ? ORDER BY ts, id').all(sinceMs, untilMs)
+      .map(r => ({ ...r, detail: r.detail_json ? JSON.parse(r.detail_json) : null }));
+  }
+
   getEquityHistory(bucketId, sinceMs = 0, limit = 2000) {
     return this.db.prepare(`
       SELECT * FROM (
@@ -312,6 +356,12 @@ export class Store {
         SELECT * FROM candles WHERE pool = ? AND timeframe = ? ORDER BY ts DESC LIMIT ?
       ) ORDER BY ts ASC
     `).all(pool, timeframe, limit);
+  }
+
+  getFirstCandleFrom(pool, timeframe, fromTs) {
+    return this.db.prepare(
+      'SELECT * FROM candles WHERE pool = ? AND timeframe = ? AND ts >= ? ORDER BY ts ASC LIMIT 1',
+    ).get(pool, timeframe, fromTs) ?? null;
   }
 
   getLastCandle(pool, timeframe, beforeTs = Number.MAX_SAFE_INTEGER) {

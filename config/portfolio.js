@@ -24,7 +24,18 @@ export const CONFIG = {
   },
 
   capital: {
-    totalUsd: 1000, // UNVALIDATED — paper capital
+    totalUsd: 4000, // UNVALIDATED — paper capital (user's choice for the 7-day paper run)
+  },
+
+  // The long paper run (bucket 1 part 5). Used for the "day N of 7" in digests and the report.
+  paperRun: {
+    days: 7,
+  },
+
+  alerts: {
+    digestTimes:     ['08:00', '21:00'], // local time of this machine
+    dataDownAlertMs: 10 * 60_000,        // alert when a bucket's feed has been down this long
+    errorBurst:      { count: 10, windowMs: 10 * 60_000, cooldownMs: 60 * 60_000 },
   },
 
   // Capital not assigned to a bucket sits in the reserve and is never traded.
@@ -62,7 +73,8 @@ export const CONFIG = {
       },
       // Ported from trading-bot. Every number is UNVALIDATED.
       strategy: {
-        minConfidence: 0.55, // on strategy confidence × regime confidence
+        minConfidence:      0.55, // on strategy confidence × regime confidence (shadow and live)
+        paperMinConfidence: 0.45, // UNVALIDATED — user's choice for the paper run; used only in paper mode
         regime: {
           timeframe:     '5m',
           minCandles:    200,
@@ -97,6 +109,33 @@ export const CONFIG = {
         maxPositionPctOfBucket: 0.25, // UNVALIDATED
         maxRiskPerTradePct:     0.05, // UNVALIDATED
         dailyLossLimitPct:      0.10, // UNVALIDATED
+      },
+    },
+    // Not a strategy. Opens a small ETH/USDC position on a fixed schedule so the
+    // open, close, restart and alert paths (and its own position cap and daily
+    // loss limit) are exercised during the paper run. Expected to lose its costs.
+    exerciser: {
+      enabled:            true,
+      name:               'Exerciser (test only)',
+      mode:               'paper',
+      live:               false,
+      paperOnly:          true,
+      allocationPct:      0.02,
+      evaluateIntervalMs: 60_000,
+      feed:               'liquidDirectional', // uses this bucket's price feed; must be listed before it
+      risk: {
+        maxConcurrentPositions: 2,
+        maxPositionPctOfBucket: 0.40,
+        maxRiskPerTradePct:     0.05,
+        dailyLossLimitPct:      0.02,
+      },
+      trade: {
+        symbol:    'ETH/USDC',
+        sizeUsd:   30,
+        everyMs:   30 * 60_000, // one entry attempt per wall-clock slot (:00 and :30)
+        stopPct:   0.003,
+        targetPct: 0.003,
+        maxHoldMs: 75 * 60_000,
       },
     },
   },

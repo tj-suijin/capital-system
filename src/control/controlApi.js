@@ -4,8 +4,9 @@
 // call PortfolioManager directly.
 //
 // There is deliberately no command that enables live trading.
+import { summarizeWindow } from '../portfolio/runSummary.js';
 
-export const EVENTS = ['decision', 'fill', 'close', 'risk', 'heartbeat', 'control'];
+export const EVENTS = ['decision', 'fill', 'close', 'risk', 'heartbeat', 'control', 'alert'];
 
 export class ControlApi {
   constructor({ portfolio, store }) {
@@ -38,6 +39,26 @@ export class ControlApi {
 
   getEquityHistory({ bucketId = 'portfolio', sinceMs = 0, limit = 2000 } = {}) {
     return this.store.getEquityHistory(bucketId, sinceMs, limit);
+  }
+
+  // { startedAt, days, day, endsAt, complete } for the current paper run.
+  getRunInfo() {
+    return this.pm.runInfo();
+  }
+
+  // { previousExit: 'first' | 'clean' | 'unclean', pid, openPositions } for this process, or null.
+  getStartInfo() {
+    return this.pm.startInfo;
+  }
+
+  // What happened between sinceMs and untilMs (see runSummary.js), plus the
+  // live feed health and error count, which only cover the current process.
+  getRunSummary({ sinceMs, untilMs = this.pm.clock() + 1 }) {
+    const summary = summarizeWindow({ store: this.store, sinceMs, untilMs });
+    summary.health = Object.fromEntries(this.pm.registry.list().map(b => [b.id, b.health(untilMs)]));
+    summary.errorsLogged = this.pm.health.errorsSince(sinceMs);
+    summary.memoryMb = Math.round(process.memoryUsage().rss / 1048576);
+    return summary;
   }
 
   // ---- Commands ----

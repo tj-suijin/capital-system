@@ -5,11 +5,21 @@ import { CONFIG } from '../../config/portfolio.js';
 import { analyze } from '../buckets/liquidDirectional/analyst.js';
 import { MarketData } from '../data/marketData.js';
 import { getStore } from '../persistence/db.js';
+import { LOCK_HELD_EXIT_CODE, acquireLock, lockPathFor } from '../shared/instanceLock.js';
 import { createLogger } from '../shared/logger.js';
 
 const log = createLogger('MARKET_CLI');
 const bucket = CONFIG.buckets.liquidDirectional;
 const params = bucket.strategy;
+
+// It writes candles to the same database, so it cannot run beside `npm start`.
+const lock = acquireLock(lockPathFor(CONFIG.db.path));
+if (!lock.ok) {
+  log.error({ ownerPid: lock.pid, lock: lock.path }, 'The capital system (or another market tool) is running against this database — not starting');
+  setTimeout(() => process.exit(LOCK_HELD_EXIT_CODE), 250);
+  await new Promise(() => {});
+}
+process.on('exit', () => lock.release());
 
 const store  = getStore();
 const market = new MarketData({ ethers, store, market: bucket.market, chain: CONFIG.chain });

@@ -1,7 +1,7 @@
 # PROJECT VISION DOCUMENT
 ## Multi-Bucket Autonomous Capital System
 
-**Last updated:** October 13, 2026 (revised after the second build session; see sections 12–16)  
+**Last updated:** October 14, 2026 (bucket 1 part 5, the paper run setup; see sections 12–16)  
 **Purpose:** Complete context for any coding agent (especially Cursor) so work can continue without the user re-explaining history, philosophy, architecture, or constraints.
 
 **Canonical copy:** `W:\DEV\capital-system\docs\VISION.md`, tracked in git. This is the only maintained copy. The old `W:\DEV\PROJECT_VISION_MultiBucket_Trading_System.md` is no longer kept in sync.
@@ -229,7 +229,7 @@ The user wants to hit the ground running. Optimize for clarity, safety, and incr
 
 ---
 
-## 12. Build Status (as of October 13, 2026, bucket 1 part 4)
+## 12. Build Status (as of October 14, 2026, bucket 1 part 5)
 
 **v1 step 1, the portfolio shell, has been coded, tested (23 passing tests), reviewed and committed.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
 
@@ -256,7 +256,16 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
 2. Done: indicators (with the ADX and RSI fixes), regime detector, both strategies, and the analyst.
 3. Done and committed (`9896957`): the bucket class (entries, exits including the 4-hour limit, stale-data and stop sanity checks). 57 tests passing; ran live with `npm start`.
 4. Done and committed ("Bucket 1 part 4: mark-to-market valuation"): mark-to-market valuation. Equity, sizing, the high-water mark, the drawdown halt, exposure, snapshots, status and a new Telegram `/positions` command all use the live pool price. 66 tests passing.
-5. Next: the paper run.
+5. In progress: the 7-day paper run. The setup is coded, tested (94 tests passing, including a 3-day replay through the full pipeline) and smoke-tested live, and waits for the user's review and commit. It adds:
+   - a restart supervisor (`npm run paper`) and a logon scheduled task
+   - a single-instance lock and crash logging
+   - Telegram digests at 08:00 and 21:00, plus alerts for restarts, data outages and error bursts
+   - `npm run report` for the end-of-run review
+   - an Exerciser test bucket that trades on a schedule
+   - a paper-only 45% minimum confidence for bucket 1
+   - $4,000 of paper capital on a fresh database
+
+   The run itself starts once the user has paused Windows Update and the old database is archived.
 
 See `docs/JOURNAL.md` for details.
 
@@ -285,8 +294,9 @@ See `docs/JOURNAL.md` for details.
 - **Equity is marked to market** (since bucket 1 part 4): open positions are valued at the bucket's latest price, and drawdown includes unrealized losses. Daily and weekly loss limits stay realized-only.
 - **Changing allocation percentages in config does not move capital** that is already in the ledgers. Rebalancing is a deliberate, manual act.
 - **Starting parameters (all UNVALIDATED):**
-  - $1000 paper capital
-  - LiquidDirectional 60%, DegenMemecoin 3%, Reserve 37% (the reserve also holds the future Yield/Swing share)
+  - $4,000 paper capital (raised from $1,000 for the paper run)
+  - LiquidDirectional 60%, DegenMemecoin 3%, Exerciser 2% (a test bucket for the paper run), Reserve 35% (the reserve also holds the future Yield/Swing share)
+  - Bucket 1 enters at 55% confidence in shadow and live, 45% in paper
   - Paper fee 0.05%, slippage 0.10%
   - Buckets evaluate every 60 seconds; heartbeat every 5 minutes
 

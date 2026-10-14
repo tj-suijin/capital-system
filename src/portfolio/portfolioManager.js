@@ -4,9 +4,10 @@
 //   bucket.evaluate → sizer → bucket risk → global risk → allocator → executor
 //
 // Every outcome (NO_TRADE, REJECTED, SHADOW, APPROVED, ERROR) is written to the
-// decisions table and emitted on the event bus.
+// decisions table and emitted on the event bus. Process starts and stops,
+// halts, operator actions and health alerts go to system_events.
 //
-// Events: 'decision', 'fill', 'close', 'risk', 'heartbeat', 'control'
+// Events: 'decision', 'fill', 'close', 'risk', 'heartbeat', 'control', 'alert'
 import { EventEmitter } from 'node:events';
 import { RESERVE_ID } from '../../config/portfolio.js';
 import { NO_TRADE, TRADE } from '../buckets/intent.js';
@@ -15,9 +16,12 @@ import { BucketRisk } from '../risk/bucketRisk.js';
 import { GlobalRiskEngine } from '../risk/globalRisk.js';
 import { sizePosition } from '../risk/positionSizer.js';
 import { E, TradingError } from '../shared/errors.js';
-import { createLogger } from '../shared/logger.js';
+import { createLogger, onLogError } from '../shared/logger.js';
 import { CapitalAllocator } from './capitalAllocator.js';
+import { HealthMonitor } from './healthMonitor.js';
 import { markPosition, sumMarks } from './valuation.js';
+
+const DAY = 24 * 60 * 60 * 1000;
 
 export const OUTCOME = {
   NO_TRADE: 'NO_TRADE',
@@ -57,7 +61,14 @@ export class PortfolioManager {
         const m = sumMarks(this.openPositions());
         return this.allocator.totalInUse() + m.valueUsd - m.notionalUsd;
       },
-      onHalt:           e => this.events.emit('risk', { type: 'HALT', ...e, ts: this.clock() }),
+      onHalt:           e => {
+        this._record('HALT', null, e);
+        this.events.emit('risk', { type: 'HALT', ...e, ts: this.clock() });
+      },
+    });
+    this.health = new HealthMonitor({
+      config: config.alerts, store, clock,
+      emit:   (event, payload) => this.events.emit(event, payload),
     });
 
     this.paperExecutor = new PaperExecutor(config.paper);
@@ -66,7 +77,9 @@ export class PortfolioManager {
     this._timers       = [];
     this._busy         = new Set();
     this._initialized  = false;
+    this._offErrors    = null;
     this.running       = false;
+    this.startInfo     = null;
   }
 
   // Ledgers, persisted state and live gating. Safe to call without start().
@@ -87,6 +100,8 @@ export class PortfolioManager {
 
   async start() {
     this.init();
+    this.startInfo  = this._recordStart();
+    this._offErrors = onLogError(e => this.health.onError(e));
     for (const bucket of this.registry.list()) {
       await bucket.start(this._ctx(bucket));
       const every = this.config.buckets[bucket.id].evaluateIntervalMs;
@@ -104,8 +119,41 @@ export class PortfolioManager {
     for (const t of this._timers) clearInterval(t);
     this._timers = [];
     for (const bucket of this.registry.list()) await bucket.stop();
+    this._offErrors?.();
+    this._offErrors = null;
+    if (this.startInfo) {
+      this.store.setSetting('cleanShutdown', '1', this.clock());
+      this._record('STOP', null, { pid: process.pid });
+      this.startInfo = null;
+    }
     this.running = false;
     this.log.info('Portfolio manager stopped');
+  }
+
+  // ------------------------------------------------------------ run state
+
+  // previousExit: 'first' (new database), 'clean' (stop() ran) or 'unclean'
+  // (crash, kill or reboot). The run window starts at the first ever start.
+  _recordStart() {
+    const now = this.clock();
+    const flag = this.store.getSetting('cleanShutdown');
+    const previousExit = flag == null ? 'first' : flag === '1' ? 'clean' : 'unclean';
+    this.store.setSetting('cleanShutdown', '0', now);
+    if (this.store.getSetting('runStartedAt') == null) this.store.setSetting('runStartedAt', now, now);
+    const info = { previousExit, pid: process.pid, openPositions: this.store.getOpenPositions().length };
+    this._record('START', null, info);
+    if (previousExit === 'unclean') this.log.warn({ previousExit, openPositions: info.openPositions }, 'Previous run did not shut down cleanly');
+    return info;
+  }
+
+  runInfo() {
+    const now       = this.clock();
+    const raw       = this.store.getSetting('runStartedAt');
+    const startedAt = raw == null ? null : Number(raw);
+    const days      = this.config.paperRun?.days ?? null;
+    if (startedAt == null) return { startedAt: null, days, day: null, endsAt: null, complete: false };
+    const endsAt = days ? startedAt + days * DAY : null;
+    return { startedAt, days, day: Math.floor((now - startedAt) / DAY) + 1, endsAt, complete: endsAt != null && now >= endsAt };
   }
 
   // ---------------------------------------------------------------- cycle
@@ -124,6 +172,11 @@ export class PortfolioManager {
       this._decide(bucket, OUTCOME.ERROR, 'bucket', null, err.message, null);
     } finally {
       this._busy.delete(bucketId);
+    }
+    try {
+      this.health.checkBucket(bucket, this.clock());
+    } catch (err) {
+      this.log.error({ bucket: bucketId, err: err.message }, 'Health check failed');
     }
   }
 
@@ -192,6 +245,8 @@ export class PortfolioManager {
       return reject('executor', err.code ?? E.EXEC_FAILED.code, err.message);
     }
 
+    // Stops and targets are anchored to the market price the bucket saw, not
+    // the fill, so a fill's slippage does not move them.
     const now = this.clock();
     const positionId = this.store.insertPosition({
       bucketId,
@@ -203,8 +258,8 @@ export class PortfolioManager {
       qty:         fill.qty,
       notionalUsd: size,
       openFeeUsd:  fill.feeUsd,
-      stopLoss:    intent.stopLossPct ? fill.fillPrice * (1 - intent.stopLossPct) : null,
-      takeProfit:  intent.takeProfitPct ? fill.fillPrice * (1 + intent.takeProfitPct) : null,
+      stopLoss:    intent.stopLossPct ? intent.price * (1 - intent.stopLossPct) : null,
+      takeProfit:  intent.takeProfitPct ? intent.price * (1 + intent.takeProfitPct) : null,
       reason:      intent.reason,
       tag:         intent.tag,
       openedAt:    now,
@@ -264,7 +319,19 @@ export class PortfolioManager {
     this.store.insertEquitySnapshot({ bucketId: 'portfolio', equityUsd: risk.equity, ...totals, ts });
 
     const counts = this.store.decisionCountsSince(ts - this.config.heartbeatIntervalMs);
-    this.log.info({ equityUsd: +risk.equity.toFixed(2), unrealizedPnlUsd: +totals.unrealizedPnlUsd.toFixed(2), drawdownPct: +(risk.drawdownPct * 100).toFixed(2), halted: this.globalRisk.isHalted(), decisions: counts }, 'Heartbeat');
+    const mem    = process.memoryUsage();
+    const feeds  = {};
+    for (const b of this.registry.list()) {
+      const h = b.health(ts);
+      if (h.reconnects != null || !h.ok) {
+        feeds[b.id] = { ok: h.ok, reconnects: h.reconnects ?? null, lastTickAgeS: h.lastTickAt != null ? Math.round((ts - h.lastTickAt) / 1000) : null };
+      }
+    }
+    this.log.info({
+      equityUsd: +risk.equity.toFixed(2), unrealizedPnlUsd: +totals.unrealizedPnlUsd.toFixed(2),
+      drawdownPct: +(risk.drawdownPct * 100).toFixed(2), halted: this.globalRisk.isHalted(), decisions: counts,
+      rssMb: Math.round(mem.rss / 1048576), heapMb: Math.round(mem.heapUsed / 1048576), feeds,
+    }, 'Heartbeat');
     this.events.emit('heartbeat', { ts, equityUsd: risk.equity, drawdownPct: risk.drawdownPct, decisions: counts });
   }
 
@@ -273,20 +340,20 @@ export class PortfolioManager {
   pauseBucket(bucketId, reason) {
     this._requireBucket(bucketId);
     this.bucketRisk.pause(bucketId, reason);
-    this.events.emit('control', { type: 'PAUSE', bucketId, reason, ts: this.clock() });
+    this._control('PAUSE', bucketId, { reason });
   }
 
   resumeBucket(bucketId) {
     this._requireBucket(bucketId);
     this.bucketRisk.resume(bucketId);
-    this.events.emit('control', { type: 'RESUME', bucketId, ts: this.clock() });
+    this._control('RESUME', bucketId);
   }
 
   setWindDown(on = true) {
     this.windingDown = !!on;
     this.store.setSetting('windingDown', on ? '1' : '0', this.clock());
     this.log.warn({ windingDown: this.windingDown }, 'Wind-down toggled');
-    this.events.emit('control', { type: on ? 'WIND_DOWN' : 'WIND_DOWN_OFF', ts: this.clock() });
+    this._control(on ? 'WIND_DOWN' : 'WIND_DOWN_OFF');
   }
 
   halt(reason = 'operator halt') {
@@ -295,7 +362,16 @@ export class PortfolioManager {
 
   unhalt() {
     this.globalRisk.unhalt();
-    this.events.emit('control', { type: 'UNHALT', ts: this.clock() });
+    this._control('UNHALT');
+  }
+
+  _control(type, bucketId = null, detail = {}) {
+    this._record(type, bucketId, detail);
+    this.events.emit('control', { type, ...(bucketId ? { bucketId } : {}), ...detail, ts: this.clock() });
+  }
+
+  _record(type, bucketId, detail) {
+    this.store.insertEvent({ type, bucketId, detail, ts: this.clock() });
   }
 
   // ------------------------------------------------------------ valuation

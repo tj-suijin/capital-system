@@ -24,3 +24,11 @@ Terse list of trading-logic changes and bug fixes. The narrative history lives i
 - Bucket 1 entries: the stop must be below price, its distance is clamped to 0.3%–3%, and a target must be at least 0.4% away to cover round-trip costs.
 - Bucket 1 exits, checked every cycle at the live pool price: stop loss, take profit, the opening strategy's exit signal (via the position's new `tag`), and a 4-hour time limit. Exits are deferred while the feed is stale.
 - Mark-to-market: equity is cash plus the market value of open positions minus opening fees, using each bucket's `markPrice()` (bucket 1: last pool swap, else newest 1m candle; no price means at cost). Marked equity drives sizing, the high-water mark, the drawdown halt (now checked every bucket cycle), gross exposure (now at market value), snapshots and status. Daily and weekly loss limits remain realized-only.
+- Paper run: paper capital raised from $1,000 to $4,000; allocation is now LiquidDirectional 60%, DegenMemecoin 3%, Exerciser 2%, Reserve 35%.
+- Bucket 1: `paperMinConfidence` (45%) replaces the 55% minimum entry confidence in paper mode only; shadow and live keep 55%.
+- Bucket 1: before the first live swap after a start, entries and exits wait with the reason "waiting for first live swap" (was reported as "price feed stale").
+- New Exerciser test bucket (paper only, not a strategy): $30 ETH/USDC long at every :00 and :30 slot on bucket 1's live price; 0.3% stop and target, 75-minute limit, max 2 open, 2% daily loss limit. After a restart it waits for the next slot.
+- Fix: stops and targets are now set from the market price the bucket saw at entry, not the fill price. Paper slippage (0.10%) had moved every stop and target up, so a 0.3% stop sat about 0.2% below the market and a 0.3% target about 0.4% above it.
+- Fix: the Telegram poll loop retried instantly and forever on error replies (401, 409, 429); it now backs off from 5 seconds to 5 minutes. Telegram requests now time out instead of hanging.
+- Fix: two copies could run against the same database and trade the same ledgers; a lock file now refuses the second copy (exit code 3).
+- Fix: an uncaught exception ended the process without a log line; it is now logged as fatal and exits with code 1 for the supervisor to restart.

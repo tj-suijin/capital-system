@@ -4,6 +4,89 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 14, 2026 (session 5): Bucket 1, paper run setup
+
+**Area:** LiquidDirectional bucket, part 5 of 5 (getting ready for the long paper run). It also touches the portfolio shell's operations and Telegram, and adds a new Exerciser test bucket. Part 4 was committed as `e77d595`.
+
+**What changed:**
+- **Restarts.** `npm run paper` runs `scripts/paper-run.ps1`, a supervisor that restarts the system after a crash. It waits 15 seconds, doubling up to 5 minutes, and gives up after 5 crashes in an hour with a Telegram message. `scripts/install-task.ps1` registers it as a Windows scheduled task at logon.
+- **One copy only.** A lock file, `data/capital.lock`, stops a second copy from trading the same database. The second copy exits with code 3 and sends a Telegram warning. `npm run market` takes the same lock.
+- **Crashes are logged.** An uncaught exception is now logged as fatal and exits with code 1. Each start records whether the previous stop was clean, and Telegram reports an unclean one along with the number of open positions.
+- **Telegram.** The poll loop now backs off on error replies (5 seconds up to 5 minutes), and every request has a timeout. A digest arrives at 08:00 and 21:00 local time: equity, trades, decisions, top no-trade reasons, rejections, near misses and health. `/digest [hours]` gives one on demand. New alerts cover a feed that has been down for 10 minutes (and its recovery) and bursts of errors.
+- **Event history.** A new `system_events` table records starts, stops, outages, error bursts, halts and operator actions. The heartbeat now logs memory use and the feed's reconnect count.
+- **`npm run report`.** It writes a Markdown review of the run to `reports/`, covering:
+  - uptime and gaps, restarts, outages and errors, and memory and disk use
+  - decisions, the inferred regime, near misses and rejections for each bucket
+  - every trade, with a check of its fill against that minute's candle
+  - a comparison with simply holding ETH
+- **Bucket 1:**
+  - In paper mode it enters at 45% confidence. Shadow and live keep 55%.
+  - Before the first live swap it says "waiting for first live swap" instead of "price feed stale".
+- **Exerciser bucket.** A test bucket, not a strategy. It opens a $30 long at every :00 and :30 using bucket 1's price feed, with a 0.3% stop and target, a 75-minute limit, at most 2 open and a 2% daily loss limit.
+- **Capital.** Paper capital rises from \$1,000 to \$4,000. The split is now 60% for LiquidDirectional, 3% Degen, 2% Exerciser and 35% Reserve.
+- **Stop and target anchoring (bug fix).** Stops and targets are now placed from the market price at entry, not the fill price.
+- **Tests.** 28 new tests, 94 in total, all passing. They include:
+  - a 3-day synthetic replay through the full pipeline, checking every minute that cash plus in-use equals allocation plus realized P&L
+  - a restart while two positions are open
+  - the exerciser tripping its position cap and its daily loss limit
+  - the lock, the health monitor, Telegram backoff, the digest and the report
+
+**Why:** The paper run has to last days on the user's gaming PC without anyone watching. It needs to restart itself, report silence as well as problems, and leave behind enough data to review. Entries were too rare at 55% to exercise anything (none in the 9 replayable hours), so the user lowered the paper threshold and asked for a test bucket that trades on a schedule.
+
+**Decisions** (all the user's; details are in `DECISIONS.md`):
+- The run lasts 7 days, on a fresh database. The old one is archived to `data/archive/`, not deleted.
+- Paper capital is \$4,000.
+- Bucket 1's paper threshold is 45%. A separate `paperMinConfidence` is used only in paper mode.
+- The Exerciser uses the numbers above, funded from the reserve.
+- The supervisor restarts the system automatically, but stops after 5 crashes in an hour.
+- Digests arrive at 08:00 and 21:00.
+- Stops and targets are anchored to the market price, not the fill. The replay showed the problem: paper slippage had moved every stop and target up 0.1%, so the exerciser's "0.3%" stop sat 0.2% below the market and its target 0.4% above. In the replay it hit its stop 33 times and its target twice. The same shift applied to bucket 1.
+- The user runs the system from their own PowerShell window or the logon task, not from inside Cursor.
+
+**Replay of stored candles:** Only 9.1 hours of the stored candles (Oct 13, 15:54 to Oct 14, 00:56 local time) have the regime warm-up behind them. In that window bucket 1 would have entered 0 times at 55%, 3 times at 50% and 4 times at 45%. All 4 were trend-following. Lowering the threshold below 45% adds nothing, because the next-best setups scored 34%. Mean reversion never cleared 45%, even though the market was ranging 78% of the time.
+
+**Smoke run** (on a separate database, `data/smoke/`, so the run clock wasn't started):
+- The supervisor started the system, which created the \$2,400 / \$120 / \$80 / \$1,400 ledgers and backfilled 19,251 swaps in 12 seconds.
+- A second copy was refused with exit code 3.
+- The exerciser opened \$30 at 01:30. Hard-killing the process 10 seconds later was handled correctly: the supervisor restarted it after 15 seconds, the new process logged the unclean stop with 1 open position, and it kept marking that position.
+- At 02:00 a second position opened. At 02:30 the position cap rejected a third, live.
+- At 02:46 the restarted process closed position 1 on its 75-minute limit, for −\$0.08.
+- Two Telegram polls failed briefly. One hung until the new 35-second timeout, and one hit a network error. Both recovered after a single 5-second wait.
+- Memory held at 81–91 MB after the restart, and the feed stayed live with no reconnects.
+- `npm run report` on the smoke database rendered every section correctly: 100% heartbeat coverage, 2 starts (1 unclean), the cap rejection and the trade table.
+
+The smoke run used the code from before the anchoring fix.
+
+**Unvalidated:**
+- the 45% paper threshold
+- the Exerciser's numbers
+- the alert thresholds (10 minutes for a data outage, 10 errors in 10 minutes)
+- the supervisor's backoff and its 5-crashes-an-hour cap
+- \$4,000 of paper capital
+
+The synthetic replay says nothing about real stop and target rates, or about bucket 1's results.
+
+**Not verified:**
+- a clean Ctrl+C stop through the supervisor (the agent can't send Ctrl+C; covered by a unit test)
+- registering the scheduled task
+- a digest arriving at its scheduled time
+- a live data-down alert
+- how the Telegram messages look on the phone
+- memory over several days
+- Alchemy compute usage over a week
+
+**Next steps:**
+1. The user reviews and commits.
+2. Pause Windows Update for the week, and put off GPU driver updates.
+3. Archive `data/capital.db` (and its `-wal` and `-shm` files) to `data/archive/`. The smoke database in `data/smoke/` can be deleted.
+4. Start the run from your own PowerShell with `npm run paper`, or register the task with `scripts\install-task.ps1`. Leave the window minimized and don't close it.
+5. Check the first digest, and `/status` and `/digest` in Telegram. Check the Alchemy dashboard after the first day.
+6. After 7 days, run `npm run report` and review it together.
+
+**Open questions:** whether bucket 1 should record its regime in each decision instead of having the report infer it from the reason text. The earlier open questions in `DECISIONS.md` still stand.
+
+---
+
 ## October 13, 2026 (session 4): Bucket 1, mark-to-market valuation
 
 **Area:** LiquidDirectional bucket, part 4 of 5, and the portfolio shell's equity and risk. Part 3 was committed as `9896957`.

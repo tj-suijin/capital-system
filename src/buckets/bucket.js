@@ -34,6 +34,12 @@ export class Bucket {
     return null;
   }
 
+  // Data health for alerting: { ok, reason? }. A bucket that is not ok for
+  // config.alerts.dataDownAlertMs triggers a DATA_DOWN alert.
+  health(_now) {
+    return { ok: true };
+  }
+
   onFill(_position) {}
   onClose(_position) {}
 
