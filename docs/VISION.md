@@ -231,7 +231,7 @@ The user wants to hit the ground running. Optimize for clarity, safety, and incr
 
 ## 12. Build Status (as of October 13, 2026)
 
-**v1 step 1, the portfolio shell, has been coded and tested (23 passing tests). It has not been committed yet and is waiting for the user's review.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
+**v1 step 1, the portfolio shell, has been coded, tested (23 passing tests), reviewed and committed.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
 
 What exists in `W:\DEV\capital-system`:
 - `config/portfolio.js`: every number, each marked UNVALIDATED.
@@ -249,9 +249,10 @@ What exists in `W:\DEV\capital-system`:
 
 Docs written in session 2: `docs/JOURNAL.md`, `.cursor/rules/journal.mdc`, `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/GUI_VISION.md`.
 
+The shell and docs were committed by the user on October 13, 2026 (commit `f06ec15`) and pushed to the private GitHub repo https://github.com/tj-suijin/capital-system.
+
 **Next:**
-1. The user reviews and commits (git user name and email must be set first).
-2. Bucket 1 (LiquidDirectional): port the old ETH/USDC logic, and replace Aerodrome data and execution with Uniswap V3 on Base, in paper mode. Add mark-to-market pricing at the same time.
+1. Bucket 1 (LiquidDirectional): port the old ETH/USDC logic, and replace Aerodrome data and execution with Uniswap V3 on Base, in paper mode. Add mark-to-market pricing at the same time.
 
 ---
 
@@ -289,7 +290,7 @@ Docs written in session 2: `docs/JOURNAL.md`, `.cursor/rules/journal.mdc`, `CHAN
 
 - Windows, PowerShell, Node 24.
 - **Open `W:\DEV\capital-system` as the Cursor workspace.** Working from the home folder makes every file write prompt for approval.
-- Git user name and email were not set as of October 13, 2026. They are needed before committing.
+- Git identity is set globally (`wave!`, a personal Gmail address). Switch to GitHub's no-reply email before pushing to any public repo.
 - `gh` (the GitHub CLI) is not installed. GitHub is linked to the user's Cursor account.
 - npm warns `Unknown env config "devdir"`, probably left over from the Build Tools attempt. The user should remove that setting.
 - Telegram keys go in `.env` (template: `.env.example`). Without them the Telegram controls are off.
