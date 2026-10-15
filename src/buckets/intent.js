@@ -29,3 +29,13 @@ export function closeRequest({ positionId, price, reason }) {
   if (!(price > 0)) throw new Error('closeRequest: price must be > 0');
   return { positionId, price, reason: String(reason ?? 'bucket exit') };
 }
+
+// Bucket risk finds stop-outs by this prefix of the exit reason.
+export const STOP_LOSS_EXIT = 'stop loss';
+
+// The exit reason if `price` reaches the position's stop or target, else null.
+export function levelExit(position, price) {
+  if (position.stop_loss != null && price <= position.stop_loss)     return `${STOP_LOSS_EXIT} ${position.stop_loss.toFixed(2)}`;
+  if (position.take_profit != null && price >= position.take_profit) return `take profit ${position.take_profit.toFixed(2)}`;
+  return null;
+}

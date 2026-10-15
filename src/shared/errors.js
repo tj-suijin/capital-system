@@ -19,6 +19,9 @@ export const E = {
   BUCKET_MAX_POS:     { code: 'BR_002', msg: 'Bucket max concurrent positions reached' },
   BUCKET_MAX_SIZE:    { code: 'BR_003', msg: 'Position exceeds bucket max size' },
   BUCKET_DAILY_LOSS:  { code: 'BR_004', msg: 'Bucket daily loss limit reached' },
+  BUCKET_COOLDOWN:    { code: 'BR_005', msg: 'Bucket cooling down after a stop-out' },
+  BUCKET_SPACING:     { code: 'BR_006', msg: 'Too soon after the last entry in this direction' },
+  BUCKET_LOSING:      { code: 'BR_007', msg: 'An open position is losing' },
 
   // Sizing / capital / execution
   SIZE_ZERO:          { code: 'SZ_001', msg: 'Position size is zero' },

@@ -4,6 +4,143 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 15, 2026 (session 6): Bucket 1 fixes after the first paper run
+
+**Area:** Bucket 1 (LiquidDirectional), bucket risk, the paper executor and the portfolio manager's exit path.
+
+**The user's notes for this phase.** Before anything changed, the user shared their plans. The user wants to discuss every change before it is made.
+- **Backtesting:** every bucket should have a backtest feature, so new strategies can be tested and rolled out only if they pass.
+- **Names:** clearer bucket names. Bucket 1 will be renamed **Majors Trader**.
+- **Telegram:** cleaner messages. A bucket that isn't running should show one line such as "NOT ON" instead of a full set of stats.
+- **Allocation:** capital allocation should change dynamically with the number of active buckets, with plug-and-play risk profiles. Some months could run at higher risk and trade more; others could sit in assets or farm stablecoins.
+- **Research:** which indicators and regimes work for crypto and for particular pairs, so that real signals can be told apart from noise. This ties into the backtester.
+- **Overview:** a refresher on what each part of the bot is for.
+
+The agent recommended this order: fix bucket 1's mechanical flaws, rename the buckets and clean up Telegram, restart the 7-day run, build the backtester, do the research, and add allocation profiles last. The user agreed to start with the fixes.
+
+**What changed (all five fixes the user chose):**
+1. **Stops and targets are checked on every price tick.**
+   - The portfolio manager subscribes to each bucket's price feed (`subscribePrices`). Bucket 1 forwards every accepted swap, and the Exerciser forwards bucket 1's.
+   - On each fresh tick, `onPriceTick` asks the bucket for `tickExits`. By default these are only stops and targets, and the position closes at that tick's price. Strategy exits and the 4-hour limit stay on the 60-second cycle.
+   - Ticks older than 10 seconds are ignored, for example swaps replayed after a reconnect.
+   - A shared `levelExit()` helper now does the stop and target check for both buckets.
+2. **No double closes.** A tick and a cycle could close the same position at the same moment, which would have released its capital twice. `closePosition` now lets only the first one through.
+3. **Entry rules in bucket risk.** These are optional per-bucket settings, off unless configured:
+   - `cooldownAfterStopMs` (BR_005): no entry within 15 minutes of a stop-out. A stop-out is a close whose reason starts with "stop loss".
+   - `minEntrySpacingMs` (BR_006): at least 10 minutes between entries on the same side.
+   - `noEntryWhileLosing` (BR_007): no entry while an open position is under water at its mark.
+
+   They are set for bucket 1 and Degen. The Exerciser is left without them, because its fixed schedule is the test.
+4. **Fast-move filter for bucket 1** (`fastMove.js`), applied to both strategies.
+   - **Rule:** no entry while any of the newest 6 one-minute candles has a high-to-low range of at least the larger of 0.4% and 3 times the average of the 60 candles before them.
+   - **Why the forming minute counts:** the newest candle is the one still forming, and the candle builder re-saves it on every swap. That's why entry #7 had seen the crash 28 seconds into the minute.
+   - **Calm-down:** the block lasts until 5 calm candles have completed. The no-trade reason starts with the strategy's name, so the report still infers the regime.
+5. **Paper slippage grows with volatility:** 0.10% plus 25% of the larger range of the bucket's newest two 1-minute candles (`rangeSlippageShare`). Two candles are used because early in a minute the forming candle has barely moved. At the moment #7 opened, this works out to about 0.31%.
+
+**Calibration (read-only, from about 2 days of stored 1-minute candles, Oct 12 23:15 to Oct 15 00:56):**
+- A typical minute moves 0.02%, and 99% of minutes move less than 0.32%.
+- A rule based only on ratios (3 times the average range, or 4 times the usual swap count) would have blocked 31% of all minutes. Small wiggles in quiet hours look large in relative terms.
+- Adding a minimum move of 0.4% leaves 7 episodes and 1.6% of minutes blocked. The user chose 0.4% over 0.3% (2.7% of minutes) and 0.5% (1.1%).
+- Swap count adds nothing once the minimum is in place. Some minutes have about 40 swaps and no price change, probably arbitrage bots. It was dropped.
+
+**Replay of the stored candles (agent's sanity check; not a backtest, and the script is not in the repo):**
+- **Method:** the real bucket 1 code, once with the old settings and once with the new ones, over about 33 hours after warm-up. The replay only sees completed minutes, so the crash entries come one minute later than they did live.
+- **Old settings:** 16 entries, 5 of them during the 21:22 crash.
+- **New settings:** 4 entries, none during the crash.
+  - The spacing rule collapsed two clusters of trend-following entries, one at 22:48–22:54 on Oct 13 and one at 03:25–03:26 on Oct 14.
+  - The fast-move filter also blocked a mean-reversion entry at 07:31 on Oct 14.
+- **Caveat:** exits were checked once a minute at the candle close, so P&L from this replay is not meaningful and isn't reported.
+
+**Decisions:**
+- All five fixes above, with a 0.4% minimum move. The paper threshold stays at 45%. Shadow and live stay at 55%.
+- For the next 7-day run, the Degen placeholder and the Exerciser will both be turned off. That is part of the next step, not this one.
+- Bucket 1 will be renamed Majors Trader in the next step. The agent pointed out that "Liquidity Pool Trader" would be confusing, because in DeFi "liquidity provider" means depositing into a pool, which bucket 1 doesn't do.
+
+**Unvalidated:** every new number: the 15-minute cooldown, the 10-minute spacing, the 0.4% minimum, the 3× multiple, the 60-candle lookback, the 5 calm candles, and the 25% slippage share. The slippage share can only be checked against real fills.
+
+**Not verified:**
+- The code has not been run against the live feed. The 106 tests pass, including new tests for tick exits, the double-close guard, the entry rules, the fast-move filter and slippage.
+- The tick handler's load during a crash (about 250 swaps a minute) has only been reasoned about: one small database query per tick per bucket.
+
+**Next steps and open questions:**
+1. Review and commit these fixes. `0c46d45` is still not pushed.
+2. Rename the buckets, turn off Degen and the Exerciser, and clean up Telegram.
+3. Archive `data/capital.db` (for example to `data/archive/run1-2026-10-14/`) and restart the 7-day run on a fresh database.
+4. Design the backtester: months of candles from the chain, a simulated clock, the real pipeline, and pessimistic fills. Consider storing raw swaps, because one-minute candles hide moves inside the minute.
+5. Later: research on indicators and regimes, and risk profiles with dynamic allocation.
+6. The new rules cut entries sharply: 4 instead of 16 in the replay. If the 7-day run produces too few trades to learn from, revisit the spacing and the losing-position rule first.
+
+---
+
+## October 15, 2026 (session 5, continued): First 7.5 hours of the paper run, and review
+
+**Area:** The bucket 1 paper run (part 5). No code was changed in this part of the session.
+
+**What happened:**
+- On Oct 14 the agent committed the paper run setup as `0c46d45`, at the user's request. It has **not been pushed** (`main` is 1 commit ahead of `origin/main`).
+- The user paused Windows Update, archived the old database to `data/archive/`, deleted `data/smoke/`, and started `npm run paper` from their own PowerShell window at 17:31 on Oct 14. They used neither Cursor nor the scheduled task.
+- The user stopped it with Ctrl+C at 00:56 on Oct 15, after about 7.5 hours, to discuss the results. The system recorded a clean stop.
+- The agent read the data back read-only, then wrote `reports/paper-run-20261015-0059.md`: the generated report plus review notes with a minute-by-minute table of the 21:22 drop. `reports/` is gitignored, so the file exists only on this machine.
+
+**Results:**
+
+| | Start | End | Change |
+| --- | --- | --- | --- |
+| Portfolio | \$4,000.00 | \$3,994.76 | −\$5.24 |
+| Bucket 1 (LiquidDirectional) | \$2,400.00 | \$2,396.28 | −\$3.72 over 3 trades, all stopped out |
+| Exerciser | \$80.00 | \$78.48 | −\$1.52 over 13 trades |
+| ETH | \$2,415.72 | \$2,348.86 | −2.77% |
+
+**Operation passed:**
+- Heartbeat coverage was 100%, with one start and one clean stop.
+- There were no data outages, no errors in `errors.log` and no halts. Memory settled at about 85 MB, and the database grew to 0.6 MB.
+- One candle gap (18:49) and the wait for the first live swap after startup each blocked a single cycle.
+- Five Telegram polls timed out; each recovered after one 5-second retry. No sends failed. Whether the 21:00 digest arrived on the phone has not been confirmed.
+
+**What bucket 1 did in the 21:22 drop.** ETH ranged near \$2,414, then fell about 3% in roughly 7 minutes. The 21:22 minute alone fell 1.1%, with 251 swaps against about 30 normally.
+- The regime still read "ranging", so mean reversion bought \$120 at 21:22 and another \$120 at 21:23, both at 50% confidence.
+- At 21:24 both positions hit their stops, and it opened a third in the same cycle.
+- The regime switched to downtrend at 21:25, and the third position stopped out at 21:28.
+
+**Findings:**
+1. **The threshold:** all three entries scored 50%, so the paper-only 45% threshold let them through. At 55% none would have opened.
+2. **The regime detector is slow to see a sudden move.** It uses 5-minute candles with long lookbacks, and it took three minutes to see the crash. Meanwhile mean reversion treated the falling price as a dip to buy.
+3. **There's no cooldown after a stop-out and no spacing between entries.** The bucket added a second position in the same direction one minute after the first, and re-entered in the same cycle that stopped it out.
+4. **Stops are checked once a minute, at the last price, so losses run past them.** Bucket 1's trade #7 had a 0.60% stop and lost 1.39%. The Exerciser's #6 had a 0.3% stop and lost 1.29%.
+5. **Paper slippage is optimistic in a fast market.** Entry fills were 0.3–0.4% above that minute's close because price kept falling within the minute. That isn't a bug, but the 0.10% assumption is too low for moves like this.
+6. **The risk limits never came close to triggering.** Bucket 1 lost \$3.72 against its \$120 daily limit. Peak gross exposure was at most about \$270, under 7% of equity.
+
+**The Exerciser worked as designed.**
+- It took 13 trades: 5 hit their target, 7 their stop and 1 the time limit. It tripped the position cap once.
+- It reached −\$1.52 against its \$1.60 daily limit.
+- Targets roughly break even, because a 0.3% target is about the round-trip cost (average win \$0.02, average loss \$0.20).
+- Its trades confirm the stop-and-target fix: levels are set from the market price, not the fill.
+
+**Decisions made in the conversation:**
+- The user runs the system from their own PowerShell window, outside Cursor. The PC is also a gaming PC. The load is small (about 90 MB and almost no CPU), but closing the console window, or clicking into an old-style console with QuickEdit on, stops or freezes it.
+- During the review the code stays unchanged. Reports and docs may be written.
+
+**State left behind:**
+- `data/capital.db` holds this partial run, and its `runStartedAt` is 17:31 on Oct 14. Restarting `npm run paper` on it continues the same run window and day count. For a clean 7 days after any strategy change, archive it again first, for example to `data/archive/run1-2026-10-14/`.
+- The original pre-run database is in `data/archive/`.
+- Windows Update is paused.
+
+**Not verified:**
+- the 21:00 digest arriving on the phone
+- the logon task (not used yet)
+- multi-day memory use and Alchemy usage, because the run was too short
+
+**Next steps and open questions** (these are the topics the user wants to discuss in the next chat):
+1. **Threshold:** keep 45% in paper, or go back to 50–55%?
+2. **Fast-move filter:** for example, no mean-reversion entries when the last minute's range or swap count is far above normal.
+3. **Cooldown and spacing:** a wait after a stop-out, and a minimum gap between same-direction entries in a bucket.
+4. **Exit cadence:** check stops on every price tick, or every few seconds, instead of once a minute.
+5. **Slippage:** model it according to volatility, or at least judge results with 0.2–0.3% as well.
+6. **Restart:** start the 7-day run again after deciding on the above, on a fresh database.
+7. **Push:** push `0c46d45` to GitHub.
+
+---
+
 ## October 14, 2026 (session 5): Bucket 1, paper run setup
 
 **Area:** LiquidDirectional bucket, part 5 of 5 (getting ready for the long paper run). It also touches the portfolio shell's operations and Telegram, and adds a new Exerciser test bucket. Part 4 was committed as `e77d595`.

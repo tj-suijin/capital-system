@@ -42,11 +42,20 @@ export class ScriptedBucket extends Bucket {
     this.entries = [];
     this.exits   = [];
     this.marks   = {}; // symbol → price, or a function that throws
+    this.vol     = null;
+    this.tickFn  = null; // set while the portfolio manager is subscribed
   }
   markPrice(symbol, now) {
     const m = this.marks[symbol];
     if (typeof m === 'function') return m();
     return m == null ? null : { price: m, ts: now };
+  }
+  subscribePrices(fn) {
+    this.tickFn = fn;
+    return () => { this.tickFn = null; };
+  }
+  volatilityPct() {
+    return this.vol;
   }
   async evaluate() {
     return this.entries.shift() ?? noTrade('script empty');

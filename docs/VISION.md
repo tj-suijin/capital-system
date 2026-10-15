@@ -1,7 +1,7 @@
 # PROJECT VISION DOCUMENT
 ## Multi-Bucket Autonomous Capital System
 
-**Last updated:** October 14, 2026 (bucket 1 part 5, the paper run setup; see sections 12–16)  
+**Last updated:** October 15, 2026 (fixes after the first paper run; see sections 12–16)  
 **Purpose:** Complete context for any coding agent (especially Cursor) so work can continue without the user re-explaining history, philosophy, architecture, or constraints.
 
 **Canonical copy:** `W:\DEV\capital-system\docs\VISION.md`, tracked in git. This is the only maintained copy. The old `W:\DEV\PROJECT_VISION_MultiBucket_Trading_System.md` is no longer kept in sync.
@@ -229,7 +229,7 @@ The user wants to hit the ground running. Optimize for clarity, safety, and incr
 
 ---
 
-## 12. Build Status (as of October 14, 2026, bucket 1 part 5)
+## 12. Build Status (as of October 15, 2026, fixes after the first paper run)
 
 **v1 step 1, the portfolio shell, has been coded, tested (23 passing tests), reviewed and committed.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
 
@@ -265,7 +265,20 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
    - a paper-only 45% minimum confidence for bucket 1
    - $4,000 of paper capital on a fresh database
 
-   The run itself starts once the user has paused Windows Update and the old database is archived.
+   The setup was committed as `0c46d45`, which has not been pushed yet. The run started at 17:31 on Oct 14, 2026, and the user stopped it after 7.5 hours to review.
+   - Operation was clean.
+   - Bucket 1 lost \$3.72 over 3 trades, all bought in the first minutes of a sudden 3% ETH drop.
+   - The Exerciser behaved as designed.
+
+   The findings and the open questions are in `docs/JOURNAL.md` (Oct 15, 2026) and in `reports/paper-run-20261015-0059.md`, which is local and gitignored.
+
+   **Fixes from that review (session 6, Oct 15, 2026)** are coded and tested (106 tests passing). They wait for the user's review and commit:
+   - stops and targets are checked on every price tick;
+   - the bucket-risk settings gain a cooldown after a stop-out, spacing between entries, and no adding to a losing position;
+   - bucket 1 gains a fast-move filter;
+   - paper slippage grows with volatility.
+
+   Next comes renaming bucket 1 to Majors Trader, turning off Degen and the Exerciser, and cleaning up Telegram. Then the 7-day run restarts on a fresh database, and after that the backtester gets designed.
 
 See `docs/JOURNAL.md` for details.
 
@@ -297,7 +310,7 @@ See `docs/JOURNAL.md` for details.
   - $4,000 paper capital (raised from $1,000 for the paper run)
   - LiquidDirectional 60%, DegenMemecoin 3%, Exerciser 2% (a test bucket for the paper run), Reserve 35% (the reserve also holds the future Yield/Swing share)
   - Bucket 1 enters at 55% confidence in shadow and live, 45% in paper
-  - Paper fee 0.05%, slippage 0.10%
+  - Paper fee 0.05%, slippage 0.10% plus 25% of the recent 1m range
   - Buckets evaluate every 60 seconds; heartbeat every 5 minutes
 
 ---

@@ -52,6 +52,9 @@ export const CONFIG = {
         maxPositionPctOfBucket: 0.10, // UNVALIDATED
         maxRiskPerTradePct:     0.01, // UNVALIDATED — from trading-bot
         dailyLossLimitPct:      0.05, // UNVALIDATED — of bucket allocation
+        cooldownAfterStopMs:    15 * 60_000, // UNVALIDATED — three 5m candles, so the regime can catch up
+        minEntrySpacingMs:      10 * 60_000, // UNVALIDATED — between entries on the same side
+        noEntryWhileLosing:     true,        // no adding to a position that is under water
       },
       market: {
         pool:              'base:uniswap-v3:WETH/USDC:500',
@@ -70,6 +73,11 @@ export const CONFIG = {
         maxStopPct:       0.03,   // UNVALIDATED — wider strategy stops are tightened to this
         minTargetPct:     0.004,  // UNVALIDATED — targets closer than this don't cover round-trip costs
         marketRetryMs:    60_000, // retry interval if market data fails to start
+        // No entries while a 1m candle (the forming one or one of the last
+        // calmCandles) has a high-low range of at least
+        // max(minRangePct, avgMultiple × the average of the lookback candles before).
+        // UNVALIDATED — picked from 2 days of candles (Oct 13–14, 2026): about 1.6% of minutes blocked.
+        fastMove: { minRangePct: 0.004, avgMultiple: 3, lookback: 60, calmCandles: 5 },
       },
       // Ported from trading-bot. Every number is UNVALIDATED.
       strategy: {
@@ -109,6 +117,9 @@ export const CONFIG = {
         maxPositionPctOfBucket: 0.25, // UNVALIDATED
         maxRiskPerTradePct:     0.05, // UNVALIDATED
         dailyLossLimitPct:      0.10, // UNVALIDATED
+        cooldownAfterStopMs:    15 * 60_000, // UNVALIDATED
+        minEntrySpacingMs:      10 * 60_000, // UNVALIDATED
+        noEntryWhileLosing:     true,
       },
     },
     // Not a strategy. Opens a small ETH/USDC position on a fixed schedule so the
@@ -123,6 +134,7 @@ export const CONFIG = {
       allocationPct:      0.02,
       evaluateIntervalMs: 60_000,
       feed:               'liquidDirectional', // uses this bucket's price feed; must be listed before it
+      // No cooldown, spacing or losing-position rules: the fixed schedule is the test.
       risk: {
         maxConcurrentPositions: 2,
         maxPositionPctOfBucket: 0.40,
@@ -148,8 +160,9 @@ export const CONFIG = {
   },
 
   paper: {
-    feePct:      0.0005, // UNVALIDATED — Uniswap 0.05% tier
-    slippagePct: 0.001,  // UNVALIDATED
+    feePct:             0.0005, // UNVALIDATED — Uniswap 0.05% tier
+    slippagePct:        0.001,  // UNVALIDATED — base slippage
+    rangeSlippageShare: 0.25,   // UNVALIDATED — plus this share of the bucket's recent 1m range; only live fills can check it
   },
 
   heartbeatIntervalMs: 5 * 60_000,

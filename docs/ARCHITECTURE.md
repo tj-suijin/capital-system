@@ -1,6 +1,6 @@
 # Architecture
 
-This describes the code as it stands after bucket 1 part 5 (the paper run setup). The reasons behind the choices are in `DECISIONS.md`.
+This describes the code as it stands after bucket 1 part 5 (the paper run setup) and the fixes from its first 7.5 hours. The reasons behind the choices are in `DECISIONS.md`.
 
 ## Shape
 
@@ -34,13 +34,15 @@ Each bucket runs on its own timer (`evaluateIntervalMs`, 60 seconds by default).
 
 **1. Review exits.** The bucket gets its open positions and may return `closeRequest`s. Closes always go through. Halts, pauses and wind-down never block an exit, because closing reduces risk.
 
+**Between cycles: price ticks.** At start the manager subscribes to each bucket's prices (`subscribePrices`). For every tick no more than 10 seconds old, `onPriceTick` asks the bucket for `tickExits`, which by default are only stops and targets (`levelExit`), and closes those positions at the tick's price. If a tick and a cycle ask to close the same position at once, only the first close goes through.
+
 **2. Evaluate an entry.** The bucket's answer goes through these stages. The first one that says no ends the attempt.
 
 | Stage | Checks |
 | --- | --- |
 | portfolio | Not halted, not winding down |
 | sizer | Size greater than zero after all caps |
-| bucket risk | Not paused, under max concurrent positions, under max position size, under the bucket's daily loss limit |
+| bucket risk | Not paused, under max concurrent positions, under max position size, under the bucket's daily loss limit; if configured, not in the cooldown after a stop-out, not too soon after the last same-side entry, and no open position under water |
 | global risk | Under the 24h and 7d loss limits, under the gross exposure cap |
 | shadow | In shadow mode, stop here and log what would have happened |
 | allocator | Enough free cash in the bucket's ledger; the capital is locked |
@@ -79,7 +81,10 @@ Ledgers are created on first run from `config/portfolio.js`. After that they are
 - If drawdown from the high-water mark reaches the limit, a persisted **halt** is set. Drawdown includes unrealized losses and is checked at the end of every bucket cycle, after every close, and at every heartbeat. Only `unhalt` clears it, and unhalting resets the high-water mark to current equity so the halt does not immediately trip again.
 - Gross exposure is the market value of open positions divided by total equity, and a new entry may not push it over the cap.
 
-**Per bucket** (`BucketRisk`): pause state, max concurrent positions, max position size, and a daily loss limit measured against the bucket's allocation.
+**Per bucket** (`BucketRisk`): pause state, max concurrent positions, max position size, and a daily loss limit measured against the bucket's allocation. Three optional entry rules:
+- `cooldownAfterStopMs` (BR_005) counts from the bucket's latest close whose reason starts with "stop loss".
+- `minEntrySpacingMs` (BR_006) counts from the latest entry on the same side.
+- `noEntryWhileLosing` (BR_007) uses the marked open positions.
 
 ## Modes and the live gate
 
@@ -91,6 +96,8 @@ Each bucket has a mode:
 ## Execution adapters
 
 `ExecutionAdapter` defines `open()` and `close()`. There will be one adapter per venue: Uniswap V3/V4 on Base for bucket 1, and a Solana venue for the degen bucket later.
+
+The manager passes each fill the bucket's `volatilityPct(now)`. The paper executor's slippage is `slippagePct + rangeSlippageShare × volatilityPct`, so fills get worse in fast markets.
 
 ## Persistence
 
@@ -164,8 +171,10 @@ MarketData.start()
 `LiquidDirectionalBucket` turns the view into intents. It analyzes once per cycle, and the result is shared by the exit review and the entry check.
 
 - **No trade** if market data isn't running, the feed is stale, the last 200 five-minute or 60 one-minute candles have a gap, or the analyst has no entry.
+- **Fast moves:** no entry while one of the newest 6 one-minute candles has a range of at least the larger of 0.4% and 3 times the average of the 60 before them (`fastMove.js`). The newest candle may still be forming, because the candle builder saves the open candle on every swap.
 - **Entry:** the stop must be below the live price, and its distance is clamped to 0.3%–3%. A target must be at least 0.4% away. The portfolio manager places both as percentages of the intent's price (the market price), not the fill price. The intent carries `tag` (the strategy), which is stored on the position.
-- **Exits,** checked first in every cycle at the live price: stop loss, take profit, the opening strategy's exit signal, and the 4-hour limit. No exits are requested while the feed is stale.
+- **Exits,** checked first in every cycle at the live price: stop loss, take profit, the opening strategy's exit signal, and the 4-hour limit. Stops and targets are also checked on every swap through `subscribePrices`. No exits are requested while the feed is stale.
+- **Volatility:** `volatilityPct()` is the larger range of the newest two 1-minute candles. The Exerciser borrows both the prices and the volatility from bucket 1.
 - **Startup:** `start()` starts its `MarketData`. If that fails, the bucket answers no-trade and retries every minute.
 
 ## Known limitations

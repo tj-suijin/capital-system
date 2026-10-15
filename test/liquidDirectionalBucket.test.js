@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
@@ -27,9 +28,10 @@ function candles(closes, ms, now = NOW) {
 }
 
 const RANGE = path(220, i => 2500 * (1 + 0.004 * Math.sin(i / 3)));
+// Steps of 0.2% stay under the fast-move filter's 0.4% minimum range.
 function dip() {
   const c = path(100, i => 2500 * (1 + 0.002 * Math.sin(i / 3)));
-  for (let k = 0; k < 4; k++) c.push(c.at(-1) * 0.996);
+  for (let k = 0; k < 6; k++) c.push(c.at(-1) * 0.998);
   return c;
 }
 function crossBelow() {
@@ -38,8 +40,9 @@ function crossBelow() {
   return c;
 }
 
-class FakeMarket {
+class FakeMarket extends EventEmitter {
   constructor({ entry = dip(), regime = RANGE } = {}) {
+    super();
     this.candles = { '1m': candles(entry, MIN), '5m': candles(regime, 5 * MIN) };
     this.lastPrice = entry.at(-1);
     this.lastTickAt = NOW;
@@ -115,6 +118,32 @@ test('LD bucket: no trade on stale feed, gaps, warm-up, or market data down', as
   assert.match(r.reason, /market data not running \(No RPC URL configured\)/);
   assert.equal(b4.status().ready, false);
   await b4.stop();
+});
+
+test('LD bucket: no entry during a fast move, including the forming candle, until enough calm candles pass', async () => {
+  const { bucket, market } = await makeBucket();
+  const m1 = market.candles['1m'];
+  const forming = m1.at(-1);
+  const saved = { ...forming };
+  forming.low = forming.open * 0.992; // a 0.8% drop in the minute that is still forming
+  const r = await bucket.evaluate(ctx());
+  assert.equal(r.type, NO_TRADE);
+  assert.match(r.reason, /^mean_reversion: fast move \(1m range 0\.\d\d%, limit 0\.\d\d%\), waiting for 5 calm candles$/);
+
+  Object.assign(forming, saved);
+  m1.at(-6).high = m1.at(-6).open * 1.006; // 5 calm candles after it: still blocked
+  assert.equal((await bucket.evaluate(ctx())).type, NO_TRADE);
+  m1.at(-6).high = saved.high;
+  m1.at(-7).high = m1.at(-7).open * 1.006; // 6 calm candles after it: allowed
+  assert.equal((await bucket.evaluate(ctx())).type, TRADE);
+});
+
+test('LD bucket: volatility is the larger range of the newest two 1m candles', async () => {
+  const { bucket, market } = await makeBucket();
+  const [a, b] = market.candles['1m'].slice(-2);
+  assert.equal(bucket.volatilityPct(), Math.max((a.high - a.low) / a.open, (b.high - b.low) / b.open));
+  await bucket.stop();
+  assert.equal(bucket.volatilityPct(), null);
 });
 
 test('LD bucket: paperMinConfidence applies only in paper mode', async () => {
@@ -214,13 +243,39 @@ test('LD bucket: paper position opens through the pipeline and closes at its sto
   assert.ok(closed.pnl_usd < 0);
 });
 
+test('LD bucket: a swap past the stop closes the position between cycles', async () => {
+  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60 } } };
+  const store = openStore();
+  const market = new FakeMarket();
+  const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });
+  const pm = new PortfolioManager({ config, store, registry: new BucketRegistry().register(bucket), clock: fakeClock(NOW) });
+  pm.init();
+  await bucket.start();
+  await pm.runBucketCycle('liquidDirectional');
+  const [open] = store.getOpenPositions('liquidDirectional');
+
+  const off = bucket.subscribePrices(t => pm.onPriceTick('liquidDirectional', t));
+  market.emit('price', { price: open.stop_loss * 1.0001, ts: NOW });
+  await new Promise(setImmediate);
+  assert.equal(store.getPosition(open.id).status, 'open');
+  market.emit('price', { price: open.stop_loss * 0.9999, ts: NOW });
+  await new Promise(setImmediate);
+  const closed = store.getPosition(open.id);
+  assert.equal(closed.status, 'closed');
+  assert.match(closed.exit_reason, /^stop loss/);
+  off();
+  assert.equal(market.listenerCount('price'), 0);
+});
+
 // ---- restart with an open position ----
 
 test('LD bucket: after a restart, open positions keep their stops and the time limit still applies', async t => {
   const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'cs-restart-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const dbPath = nodePath.join(dir, 'capital.db');
-  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60 } } };
+  // Two entries in a row, so the spacing and losing-position rules are off here.
+  const risk = { ...LD.risk, minEntrySpacingMs: 0, noEntryWhileLosing: false };
+  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60, risk } } };
   const boot = async (clock, market = new FakeMarket()) => {
     const store = new Store(dbPath);
     const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });

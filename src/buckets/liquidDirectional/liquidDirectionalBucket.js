@@ -2,18 +2,23 @@
 // using the regime detector and the two strategies from trading-bot.
 //
 // Entry: no trade unless market data is running, fresh and gap-free, the
-//   analyst proposes an entry, its stop is below the price, and its target
-//   (if any) is far enough away to cover costs. Stop distance is clamped to
+//   analyst proposes an entry, the market is not in a fast move (see
+//   fastMove.js), its stop is below the price, and its target (if any) is far
+//   enough away to cover costs. Stop distance is clamped to
 //   [minStopPct, maxStopPct].
 // Exit (checked every cycle, at the current pool price):
 //   stop loss, take profit, the opening strategy's exit signal, max hold time.
+//   Stops and targets are also checked on every live price tick (tickExits).
 //   With a stale price feed no exit is requested, because there is no
 //   trustworthy price to fill at.
 import { isContiguous } from '../../data/candleBuilder.js';
 import { createLogger } from '../../shared/logger.js';
 import { Bucket } from '../bucket.js';
-import { closeRequest, noTrade, tradeIntent } from '../intent.js';
+import { closeRequest, levelExit, noTrade, tradeIntent } from '../intent.js';
 import { analyze } from './analyst.js';
+import { findFastMove, rangePct } from './fastMove.js';
+
+const pct = x => `${(x * 100).toFixed(2)}%`;
 
 export class LiquidDirectionalBucket extends Bucket {
   /**
@@ -71,6 +76,12 @@ export class LiquidDirectionalBucket extends Bucket {
     if (!view.entry) return noTrade(view.noTradeReason);
 
     const e = view.entry;
+    const fm = this.trade.fastMove;
+    const fast = fm && findFastMove(this.market.getCandles(this.params.entry.timeframe, fm.lookback + fm.calmCandles + 1), fm);
+    if (fast) {
+      return noTrade(`${e.strategy}: fast move (${this.params.entry.timeframe} range ${pct(fast.rangePct)}, limit ${pct(fast.limitPct)}), waiting for ${fm.calmCandles} calm candles`);
+    }
+
     const price = this.market.lastPrice;
     if (e.stopLoss == null || !(e.stopLoss < price)) {
       return noTrade(`${e.strategy}: stop ${e.stopLoss?.toFixed(2) ?? 'missing'} is not below price ${price.toFixed(2)}`);
@@ -109,14 +120,29 @@ export class LiquidDirectionalBucket extends Bucket {
     const out = [];
 
     for (const p of open) {
-      let reason = null;
-      if (p.stop_loss != null && price <= p.stop_loss)          reason = `stop loss ${p.stop_loss.toFixed(2)}`;
-      else if (p.take_profit != null && price >= p.take_profit) reason = `take profit ${p.take_profit.toFixed(2)}`;
-      else if (p.tag && view?.exits[p.tag])                      reason = `${p.tag} exit: ${view.exits[p.tag]}`;
-      else if (ctx.now - p.opened_at >= this.trade.maxHoldMs)    reason = `time limit ${(this.trade.maxHoldMs / 3_600_000).toFixed(1)}h`;
+      const reason = levelExit(p, price)
+        ?? (p.tag && view?.exits[p.tag] ? `${p.tag} exit: ${view.exits[p.tag]}` : null)
+        ?? (ctx.now - p.opened_at >= this.trade.maxHoldMs ? `time limit ${(this.trade.maxHoldMs / 3_600_000).toFixed(1)}h` : null);
       if (reason) out.push(closeRequest({ positionId: p.id, price, reason }));
     }
     return out;
+  }
+
+  // Every accepted swap. The portfolio manager ignores ticks that are not
+  // fresh, such as swaps replayed after a reconnect.
+  subscribePrices(fn) {
+    if (typeof this.market.on !== 'function') return null;
+    const onPrice = t => fn({ symbol: this.trade.symbol, price: t.price, ts: t.ts });
+    this.market.on('price', onPrice);
+    return () => this.market.off('price', onPrice);
+  }
+
+  // The larger range of the newest two entry candles; the newest may still
+  // be forming, and early in a minute it has barely moved.
+  volatilityPct() {
+    if (!this.ready) return null;
+    const rows = this.market.getCandles(this.params.entry.timeframe, 2);
+    return rows.length ? Math.max(...rows.map(rangePct)) : null;
   }
 
   // ------------------------------------------------------------------ mark

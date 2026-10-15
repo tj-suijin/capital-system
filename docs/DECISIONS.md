@@ -118,6 +118,28 @@ Each entry records what was decided, why, and whether it can be revisited. The f
 
 **The report infers bucket 1's regime from its reason text,** because decisions are not stored with their regime. Reports are written to `reports/`, which is not tracked in git. The conclusions go into the journal.
 
+## Bucket 1 fixes after the first paper run (Oct 15, 2026)
+
+These answer the questions raised by the first 7.5 hours of the run. All were the user's choices.
+
+**Stops and targets are checked on every fresh price tick,** not once a minute. A position closes on the first accepted price past its stop or target, and that price is what gets filled. The outlier filter (2% from the median) is the only guard against a single bad price. Requiring two ticks in a row was considered and rejected, because it is slower in a crash. Strategy exits and the time limit stay on the 60-second cycle, because they depend on completed candles. Ticks more than 10 seconds old, such as swaps replayed after a reconnect, are ignored.
+
+**Cooldown, spacing and no adding to losers are bucket-risk settings,** so every bucket can use them from config.
+- **Cooldown:** 15 minutes after a stop-out, which is three 5-minute candles, so the regime detector can catch up.
+- **Spacing:** 10 minutes between entries on the same side.
+- **No adding to losers:** no entry while an open position is under water at its mark.
+
+A position starts slightly under water because of its fees and slippage. In practice, a second position can only open once the first is in profit by more than its costs. The Exerciser doesn't use these rules.
+
+**The fast-move filter blocks both strategies,** not just mean reversion, because buying a pullback in a crash is just as bad.
+- **It looks at the minute that is still forming.** A filter on completed minutes only would have missed entry #7.
+- **There's a minimum move of 0.4%.** Ratios alone flag quiet-hour wiggles: a relative-only rule would have blocked 31% of minutes.
+- **Swap count was dropped.** It adds nothing once that minimum is in place.
+
+**The paper threshold stays at 45%.** The 55% minimum would have blocked the three losing trades, but it also produced no entries at all in the earlier 9-hour replay. The real causes, the slow regime and the missing cooldown, are addressed directly.
+
+**Paper slippage grows with volatility:** 0.10% plus 25% of the larger range of the newest two 1-minute candles. The fills in the 21:22 drop were 0.3–0.4% worse than that minute's close. Most of that was the price falling further after entry within the minute, and a real swap would suffer the same delay. In normal minutes the extra slippage is almost zero.
+
 ## Unvalidated parameters
 
 None of these numbers have been backtested or reviewed for live capital. They exist so the shell can run in paper mode. All are in `config/portfolio.js`.
@@ -133,7 +155,7 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 | LiquidDirectional: max positions, max size, risk per trade, daily loss | 2, 10% of bucket, 1%, 5% |
 | DegenMemecoin: max positions, max size, risk per trade, daily loss | 1, 25% of bucket, 5%, 10% |
 | Paper fee | 0.05% (Uniswap 0.05% tier) |
-| Paper slippage | 0.10% |
+| Paper slippage | 0.10% plus 25% of the larger range of the bucket's newest two 1m candles |
 | Evaluation interval | 60 seconds per bucket |
 | Heartbeat interval | 5 minutes |
 | Bucket 1: minimum entry confidence | 55% (strategy × regime) in shadow and live; 45% in paper |
@@ -146,6 +168,9 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 | Bucket 1: stop clamp | 0.3% to 3% below entry |
 | Bucket 1: minimum target distance | 0.4% |
 | Bucket 1: max hold | 4 hours |
+| Bucket 1 and Degen: entry rules | 15-minute cooldown after a stop-out; 10 minutes between same-side entries; no entry while a position is under water |
+| Bucket 1: fast-move filter | 1m range of at least max(0.4%, 3× the average of the 60 candles before) in the forming candle or the last 5 |
+| Tick exits | ticks older than 10 seconds are ignored |
 | Exerciser | $30 every 30 minutes; 0.3% stop and target; 75-minute limit; max 2 open; 40% max size; 2% daily loss |
 | Data-down alert | after 10 minutes |
 | Error-burst alert | 10 errors in 10 minutes, at most once an hour |
@@ -157,3 +182,7 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 - Should bucket 1 add a second reference price (for example a Chainlink ETH/USD feed) to guard its marks and exits against pool manipulation? For now it marks from its own pool.
 - Should trend-following's confidence formula be loosened, or left until a backtest?
 - Should the daily and weekly loss limits count unrealized losses? For now they count realized losses only.
+- The questions from the first 7.5 hours of the paper run were decided on Oct 15, 2026 (see "Bucket 1 fixes after the first paper run").
+- How should backtesting work for every bucket, and what must a strategy pass before it moves from backtest to shadow, paper and live?
+- How should risk profiles and dynamic allocation work? For example, idle capital could go to a stablecoin-farming bucket, and unproven strategies should not get more capital.
+- If the new entry rules leave too few trades in the 7-day run, which should be loosened first?

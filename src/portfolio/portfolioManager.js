@@ -7,6 +7,9 @@
 // decisions table and emitted on the event bus. Process starts and stops,
 // halts, operator actions and health alerts go to system_events.
 //
+// Between cycles, every fresh price tick from a bucket's feed is checked
+// against that bucket's open stops and targets (onPriceTick).
+//
 // Events: 'decision', 'fill', 'close', 'risk', 'heartbeat', 'control', 'alert'
 import { EventEmitter } from 'node:events';
 import { RESERVE_ID } from '../../config/portfolio.js';
@@ -22,6 +25,8 @@ import { HealthMonitor } from './healthMonitor.js';
 import { markPosition, sumMarks } from './valuation.js';
 
 const DAY = 24 * 60 * 60 * 1000;
+// Older ticks (swaps replayed after a reconnect) are not used for exits.
+const TICK_MAX_AGE_MS = 10_000;
 
 export const OUTCOME = {
   NO_TRADE: 'NO_TRADE',
@@ -75,7 +80,10 @@ export class PortfolioManager {
     this.executors     = new Map(); // bucketId → adapter (null for shadow)
     this.windingDown   = false;
     this._timers       = [];
+    this._unsubs       = [];
     this._busy         = new Set();
+    this._tickBusy     = new Set(); // bucketIds
+    this._closing      = new Set(); // positionIds
     this._initialized  = false;
     this._offErrors    = null;
     this.running       = false;
@@ -104,6 +112,8 @@ export class PortfolioManager {
     this._offErrors = onLogError(e => this.health.onError(e));
     for (const bucket of this.registry.list()) {
       await bucket.start(this._ctx(bucket));
+      const off = bucket.subscribePrices(tick => this.onPriceTick(bucket.id, tick));
+      if (off) this._unsubs.push(off);
       const every = this.config.buckets[bucket.id].evaluateIntervalMs;
       this._timers.push(setInterval(() => this.runBucketCycle(bucket.id), every));
       this.log.info({ bucket: bucket.id, mode: bucket.mode, everyMs: every }, 'Bucket started');
@@ -118,6 +128,8 @@ export class PortfolioManager {
   async stop() {
     for (const t of this._timers) clearInterval(t);
     this._timers = [];
+    for (const off of this._unsubs) off();
+    this._unsubs = [];
     for (const bucket of this.registry.list()) await bucket.stop();
     this._offErrors?.();
     this._offErrors = null;
@@ -189,6 +201,28 @@ export class PortfolioManager {
     }
   }
 
+  // Stops and targets at a single price, between cycles. A tick that arrives
+  // while the previous one is still being handled is skipped; the next tick
+  // or the next cycle checks again.
+  async onPriceTick(bucketId, tick) {
+    if (this._tickBusy.has(bucketId)) return;
+    if (!(tick?.price > 0) || this.clock() - tick.ts > TICK_MAX_AGE_MS) return;
+    const bucket = this.registry.get(bucketId);
+    if (!bucket) return;
+    const open = this.store.getOpenPositions(bucketId).filter(p => p.symbol === tick.symbol);
+    if (!open.length) return;
+    this._tickBusy.add(bucketId);
+    try {
+      for (const req of bucket.tickExits(open, tick) ?? []) {
+        await this.closePosition(req.positionId, req.price, req.reason);
+      }
+    } catch (err) {
+      this.log.error({ bucket: bucketId, err: err.message }, 'Tick exit check failed');
+    } finally {
+      this._tickBusy.delete(bucketId);
+    }
+  }
+
   async _evaluateEntry(bucket) {
     const result = await bucket.evaluate(this._ctx(bucket));
     if (!result || result.type === NO_TRADE) {
@@ -221,7 +255,9 @@ export class PortfolioManager {
     });
     if (size <= 0) return reject('sizer', E.SIZE_ZERO, E.SIZE_ZERO.msg);
 
-    const br = this.bucketRisk.checkEntry(bucketId, size, { bucketEquityUsd: equityUsd, allocatedUsd: ledger.allocated_usd });
+    const br = this.bucketRisk.checkEntry(bucketId, size, {
+      bucketEquityUsd: equityUsd, allocatedUsd: ledger.allocated_usd, side: intent.side, openPositions: this.openPositions(bucketId),
+    });
     if (!br.ok) return reject('bucket_risk', br.code, br.reason);
 
     const gr = this.globalRisk.checkEntry(size);
@@ -238,7 +274,7 @@ export class PortfolioManager {
 
     let fill;
     try {
-      fill = await executor.open({ bucketId, symbol: intent.symbol, side: intent.side, price: intent.price, notionalUsd: size });
+      fill = await executor.open({ bucketId, symbol: intent.symbol, side: intent.side, price: intent.price, notionalUsd: size, volatilityPct: this._volatility(bucket) });
     } catch (err) {
       this.allocator.release(bucketId, size, 0);
       this.log.error({ bucket: bucketId, code: E.EXEC_FAILED.code, err: err.message }, 'Open failed');
@@ -277,14 +313,25 @@ export class PortfolioManager {
     return position;
   }
 
-  // Closing is always allowed — halts and pauses never block exits.
+  // Closing is always allowed — halts and pauses never block exits. A tick
+  // and a cycle can ask for the same close at once; only the first goes through.
   async closePosition(positionId, price, reason) {
+    if (this._closing.has(positionId)) return null;
     const position = this.store.getPosition(positionId);
     if (!position || position.status !== 'open') return null;
+    this._closing.add(positionId);
+    try {
+      return await this._close(position, price, reason);
+    } finally {
+      this._closing.delete(positionId);
+    }
+  }
 
+  async _close(position, price, reason) {
+    const positionId = position.id;
     const bucket   = this.registry.get(position.bucket_id);
     const executor = this.executors.get(position.bucket_id) ?? this.paperExecutor;
-    const fill     = await executor.close({ position, price });
+    const fill     = await executor.close({ position, price, volatilityPct: this._volatility(bucket) });
 
     const pnlUsd = fill.proceedsUsd - position.notional_usd - position.open_fee_usd - fill.feeUsd;
     const now    = this.clock();
@@ -389,6 +436,15 @@ export class PortfolioManager {
       return bucket.markPrice(position.symbol, now);
     } catch (err) {
       this.log.error({ bucket: bucket.id, positionId: position.id, code: E.MARK_FAILED.code, err: err.message }, E.MARK_FAILED.msg);
+      return null;
+    }
+  }
+
+  _volatility(bucket) {
+    try {
+      return bucket?.volatilityPct(this.clock()) ?? null;
+    } catch (err) {
+      this.log.error({ bucket: bucket.id, err: err.message }, 'Volatility lookup failed — base slippage only');
       return null;
     }
   }

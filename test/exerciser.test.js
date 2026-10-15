@@ -80,7 +80,14 @@ test('exerciser: exits on stop, target and the 75-minute limit', async () => {
 test('exerciser: the registry wires it to bucket 1\'s feed, and refuses a missing feed', () => {
   const registry = createDefaultRegistry(CONFIG, { store: openStore() });
   const ex = registry.get('exerciser');
-  assert.equal(ex.feed, registry.get('liquidDirectional'));
+  const ld = registry.get('liquidDirectional');
+  assert.equal(ex.feed, ld);
+  const seen = [];
+  const off = ex.subscribePrices(t => seen.push(t));
+  ld.market.emit('price', { price: 2500, ts: 1 });
+  off();
+  ld.market.emit('price', { price: 2501, ts: 2 });
+  assert.deepEqual(seen, [{ symbol: 'ETH/USDC', price: 2500, ts: 1 }]);
   const broken = { ...CONFIG, buckets: { exerciser: EX } };
   assert.throws(() => createDefaultRegistry(broken, { store: openStore() }), /Exerciser feed "liquidDirectional"/);
 });

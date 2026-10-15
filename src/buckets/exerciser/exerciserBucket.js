@@ -9,7 +9,7 @@
 // live price it neither enters nor exits. The feed bucket owns market data
 // alerts, so this bucket always reports itself healthy.
 import { Bucket } from '../bucket.js';
-import { closeRequest, noTrade, tradeIntent } from '../intent.js';
+import { closeRequest, levelExit, noTrade, tradeIntent } from '../intent.js';
 
 export const EXERCISER_TAG = 'exerciser';
 
@@ -65,10 +65,8 @@ export class ExerciserBucket extends Bucket {
     const price = live.price;
     const out = [];
     for (const p of open) {
-      let reason = null;
-      if (p.stop_loss != null && price <= p.stop_loss)            reason = `stop loss ${p.stop_loss.toFixed(2)}`;
-      else if (p.take_profit != null && price >= p.take_profit)   reason = `take profit ${p.take_profit.toFixed(2)}`;
-      else if (ctx.now - p.opened_at >= this.trade.maxHoldMs)     reason = `time limit ${Math.round(this.trade.maxHoldMs / 60_000)}m`;
+      const reason = levelExit(p, price)
+        ?? (ctx.now - p.opened_at >= this.trade.maxHoldMs ? `time limit ${Math.round(this.trade.maxHoldMs / 60_000)}m` : null);
       if (reason) out.push(closeRequest({ positionId: p.id, price, reason }));
     }
     return out;
@@ -76,6 +74,14 @@ export class ExerciserBucket extends Bucket {
 
   markPrice(symbol, now) {
     return this.feed.markPrice(symbol, now);
+  }
+
+  subscribePrices(fn) {
+    return this.feed.subscribePrices?.(fn) ?? null;
+  }
+
+  volatilityPct(now) {
+    return this.feed.volatilityPct?.(now) ?? null;
   }
 
   status() {

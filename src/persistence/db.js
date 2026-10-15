@@ -220,6 +220,18 @@ export class Store {
     return this.db.prepare("SELECT * FROM positions WHERE status='open' ORDER BY opened_at").all();
   }
 
+  // Close time of the bucket's latest exit whose reason starts with `reasonPrefix`, or null.
+  lastExitAt(bucketId, reasonPrefix) {
+    const row = this.db.prepare("SELECT MAX(closed_at) AS ts FROM positions WHERE bucket_id = ? AND status = 'closed' AND exit_reason LIKE ? || '%'").get(bucketId, reasonPrefix);
+    return row.ts ?? null;
+  }
+
+  // Open time of the bucket's latest entry on `side`, open or closed, or null.
+  lastEntryAt(bucketId, side) {
+    const row = this.db.prepare('SELECT MAX(opened_at) AS ts FROM positions WHERE bucket_id = ? AND side = ?').get(bucketId, side);
+    return row.ts ?? null;
+  }
+
   positionsOpenedBetween(sinceMs, untilMs) {
     return this.db.prepare('SELECT * FROM positions WHERE opened_at >= ? AND opened_at < ? ORDER BY opened_at').all(sinceMs, untilMs);
   }

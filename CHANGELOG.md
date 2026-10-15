@@ -32,3 +32,8 @@ Terse list of trading-logic changes and bug fixes. The narrative history lives i
 - Fix: the Telegram poll loop retried instantly and forever on error replies (401, 409, 429); it now backs off from 5 seconds to 5 minutes. Telegram requests now time out instead of hanging.
 - Fix: two copies could run against the same database and trade the same ledgers; a lock file now refuses the second copy (exit code 3).
 - Fix: an uncaught exception ended the process without a log line; it is now logged as fatal and exits with code 1 for the supervisor to restart.
+- Fix: stops and targets were only checked once a minute, so fast moves ran far past them (a 0.6% stop lost 1.39%). Every fresh price tick from a bucket's feed is now checked against its open stops and targets; strategy exits and time limits stay on the 60-second cycle.
+- Fix: a tick and a cycle closing the same position at once could release its capital twice; only the first close now goes through.
+- Bucket risk: new optional entry rules, set for bucket 1 and Degen: a 15-minute cooldown after a stop-out (BR_005), 10 minutes between entries on the same side (BR_006), and no entry while an open position is under water (BR_007).
+- Bucket 1: no entries during a fast move, when a 1m candle (the forming one or one of the last 5) ranges at least max(0.4%, 3× the previous hour's average); applies to both strategies.
+- Paper slippage now grows with volatility: 0.10% plus 25% of the larger range of the bucket's newest two 1m candles.

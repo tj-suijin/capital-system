@@ -1,6 +1,6 @@
 // Bucket base class. A bucket owns strategy logic only: it never sizes,
 // never touches capital, and never calls an executor directly.
-import { noTrade } from './intent.js';
+import { closeRequest, levelExit, noTrade } from './intent.js';
 
 export class Bucket {
   /**
@@ -26,6 +26,30 @@ export class Bucket {
   // Return an array of closeRequest({...}) for positions that should exit.
   async reviewPositions(_openPositions, _ctx) {
     return [];
+  }
+
+  // Live prices between cycles. Calls fn({ symbol, price, ts }) for every
+  // accepted price and returns an unsubscribe function, or null if the
+  // bucket has no price feed.
+  subscribePrices(_fn) {
+    return null;
+  }
+
+  // Exits to take at a single price tick. Only stops and targets: strategy
+  // exits and time limits wait for the next cycle.
+  tickExits(openPositions, { price }) {
+    const out = [];
+    for (const p of openPositions) {
+      const reason = levelExit(p, price);
+      if (reason) out.push(closeRequest({ positionId: p.id, price, reason }));
+    }
+    return out;
+  }
+
+  // The recent high-low range of the price as a fraction, or null if
+  // unknown. The paper executor widens slippage with it.
+  volatilityPct(_now) {
+    return null;
   }
 
   // Latest trusted price for a symbol this bucket trades: { price, ts } or null.
