@@ -4,6 +4,47 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 15, 2026 (session 7): Scope freeze to Majors Trader
+
+**Area:** Docs and agent rules only. No code was changed, and nothing was committed.
+
+**What happened:** The user shared notes (`deepseekconvo.md`) from a discussion with an outside advisor. The conclusion: the project built the portfolio layer before any strategy had a proven edge, and the first paper run's flat result is the risk system working with nothing to protect. The user chose to narrow the project to one bucket and to put the backtester ahead of the paper run.
+
+**What changed:**
+- `docs/VISION.md`: added section 17 (scope freeze, the two missing pieces, rules for the AI worker, the new order of work, a starting backtester spec). It wins over sections 1–16 where they conflict. Also updated the header, the v1 priority list in section 4, a note on section 6, the success criteria in section 10, items 2 and 15 in section 11, and the "next steps" line in section 12.
+- `.cursorrules`: added a Scope section with the rules for the agent.
+- `docs/DECISIONS.md`: added "Scope freeze" and new open questions.
+
+**Why:** The user wants to focus on one thing at a time. A strategy needs a written thesis and kill criteria before its results can be interpreted. Otherwise the user would adjust parameters after each loss, which is how overfitting happens.
+
+**Decisions:**
+- v1 is Majors Trader only. The shell, bucket abstraction and the other buckets' config stay, dormant.
+- The 7-day paper run is postponed until after a backtest over at least 6 months.
+- The thesis and kill criteria are the user's, and the agent only helps structure them.
+- The advisor's suggestion that System Test should test failure paths (forced rejection, risk-limit hit, halt, restart mid-position) is recorded as proposed. The user has not confirmed it.
+
+**Things the agent noticed while updating the docs:**
+- The notes quote the round-trip cost as "roughly 0.15%". With the paper settings it is about 0.3%, so I used that figure in section 17.3. The thesis should be measured against 0.3%.
+- The entry rules and the fast-move filter from session 6 were calibrated on about 2 days of candles and in response to one event. The backtester should test them like any other parameter.
+- "Same code as live" means Majors Trader needs a replay clock and a candle-fed data source. Today it runs on the wall clock with a live feed.
+- Six months of `eth_getLogs` needs a chunked, resumable backfill, and a check of the Alchemy compute cost. One-minute candles cannot reproduce tick-level stops, so raw swap storage is an open design question.
+
+**Unvalidated:** every parameter is still unvalidated. The backtester is meant to change that.
+
+**Not verified:** the docs were checked only by the agent and the user's skim. `docs/THESIS.md` is mentioned in section 17.3 but does not exist yet. The user would create it. No tests were run, since no code changed.
+
+**Wrap-up:** The user asked the agent to commit these changes. The user chose not to have `Downloads\adviceVISION.md` read, so it was not read and has no effect on these docs. The 7-day paper run was not started and stays postponed.
+
+**Pick up tomorrow (in this order):**
+1. **Thesis (user's work, three sentences).** What do you believe about ETH/USDC on Base? Why would trend-following, mean reversion and the regime switch capture it? Why would that beat the roughly 0.3% round-trip cost? Ask the agent for questions or labeled candidates if stuck. Put it in `docs/THESIS.md`.
+2. **Kill criteria (user's work, four numbers).** N trades and X expectancy, Y max drawdown, Z allowed gap between backtest and paper or live results. Write them while not attached to the outcome, and make them slightly pessimistic.
+3. **Backtester spec** (VISION section 17.6). Use Opus for the design. Open design questions: replay clock and candle-fed data source so the real code runs, raw swaps versus 1-minute candles, and the Alchemy compute cost of a 6-month backfill. Build it in small increments after the spec.
+4. **Do not** restart the paper run, tune parameters or touch other buckets until the backtest has been read.
+
+**Model for tomorrow:** Opus (about 200k context, high effort if wanted extra care) for the backtester design and any look at results. Sonnet for the plumbing once the design is settled.
+
+---
+
 ## October 15, 2026 (session 6, continued): Model reminder before coding
 
 **Area:** Cursor agent rules, not trading code.

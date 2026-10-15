@@ -7,6 +7,8 @@ The system is paper-first. **No live trading path exists yet.** Three buckets ar
 - **Memecoin Lab** (`memecoinLab`) is still a placeholder that always answers "no trade". It is off.
 - **System Test** (`systemTest`) is a test bucket, not a strategy. It opens small positions on a schedule to keep the machinery busy during long paper runs. It is off since the first paper run proved those paths.
 
+**Current scope (since Oct 15, 2026):** Majors Trader only. The other buckets stay off and get no work. Next come a written thesis, kill criteria and a backtester; the paper run is postponed until after the backtest. See section 17 of [`docs/VISION.md`](docs/VISION.md).
+
 The product vision is in [`docs/VISION.md`](docs/VISION.md).
 
 ## Requirements

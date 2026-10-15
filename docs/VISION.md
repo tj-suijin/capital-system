@@ -1,8 +1,10 @@
 # PROJECT VISION DOCUMENT
 ## Multi-Bucket Autonomous Capital System
 
-**Last updated:** October 15, 2026 (fixes after the first paper run; see sections 12–16)  
+**Last updated:** October 15, 2026 (scope freeze to Majors Trader only; see section 17, which wins wherever it conflicts with sections 1–16)  
 **Purpose:** Complete context for any coding agent (especially Cursor) so work can continue without the user re-explaining history, philosophy, architecture, or constraints.
+
+> **Current scope in one line:** v1 is the Majors Trader bucket and nothing else. Next comes the thesis, the kill criteria and the backtester, in that order, before any more paper running. Read section 17 first.
 
 **Canonical copy:** `W:\DEV\capital-system\docs\VISION.md`, tracked in git. This is the only maintained copy. The old `W:\DEV\PROJECT_VISION_MultiBucket_Trading_System.md` is no longer kept in sync.
 
@@ -94,11 +96,10 @@ Each bucket owns:
 - Independent paper vs live mode
 - Independent performance tracking
 
-**v1 priority:**
-1. Portfolio shell + Capital Allocator + Global Risk
-2. LiquidDirectional bucket (clean implementation on the chosen stack)
-3. DegenMemecoin bucket (paper only, very low notional)
-4. Only then consider Yield or Swing
+**v1 priority (revised October 15, 2026, see section 17):**
+1. Portfolio shell + Capital Allocator + Global Risk (done)
+2. Majors Trader (the old LiquidDirectional bucket): this is the only bucket in v1, and the work now is proving it has an edge
+3. Everything else (Memecoin Lab, Yield, Swing) is future work, frozen until Majors Trader has a thesis, a backtested result and a reviewed track record
 
 Avoid building five perfect buckets at once.
 
@@ -140,6 +141,8 @@ Keep as a possible secondary/optional venue later for best-price routing on cert
 ---
 
 ## 6. The Degen / Memecoin Bucket (Experimental Sleeve)
+
+> **Frozen (October 15, 2026).** Memecoin Lab (this bucket) stays off and gets no work until Majors Trader is done. See section 17. The description below is the long-term intent, not the current plan.
 
 - Purpose: Scratch the high-activity itch and generate learning/data.
 - Capital: Very low allocation (conceptually 1–5% of total).
@@ -191,10 +194,11 @@ Guidance for coding agents:
 
 ## 10. Near-Term Success Criteria
 
-- Clear multi-bucket shape in the repository (even if only 1–2 buckets are real).
-- LiquidDirectional bucket running cleanly on **Base + Uniswap** in paper mode.
+- Clear multi-bucket shape in the repository (even if only one bucket is real). The shape exists; no more is being added until Majors Trader is proven.
+- Majors Trader has a written thesis, written kill criteria, and a backtest over at least 6 months that the user has read, including if it says "no edge".
+- Majors Trader running cleanly on **Base + Uniswap** in paper mode, as an operational test after the backtest.
 - Simple portfolio / capital allocation / global risk concepts exist.
-- Degen bucket exists at least as a paper skeleton (Solana path can come later).
+- ~~Degen bucket exists at least as a paper skeleton~~ Dropped from v1 on October 15, 2026. The placeholder and its config stay, dormant.
 - System can run unattended in paper mode for extended periods.
 - “No trade” happens frequently and is treated as normal.
 - User can reason about each bucket’s performance and risk separately.
@@ -208,7 +212,7 @@ Profit is a later concern. Survivability, observability, and clean architecture 
 When this document is provided:
 
 1. Treat it as the source of truth for product vision and constraints.
-2. Prefer forking/extending the existing trading-bot repository over pure greenfield.
+2. Work in the fresh `capital-system` repository (section 8). The old trading-bot is a reference only.
 3. Primary stack for the first buckets: **Base + Uniswap V3/V4**.
 4. Default every new trading path to paper/shadow mode.
 5. Preserve the modular, risk-aware style of the original project.
@@ -224,6 +228,7 @@ When this document is provided:
 12. Add a development journal entry (section 15) at the end of every session that changes anything.
 13. Route every operator feature (Telegram, the future GUI) through `ControlApi` (section 16).
 14. Tell the user directly when their environment needs fixing, rather than working around it.
+15. Scope is Majors Trader only. Follow the rules for the AI worker in section 17.4. They win wherever they conflict with items above.
 
 The user wants to hit the ground running. Optimize for clarity, safety, and incremental progress that can be left running in paper mode.
 
@@ -285,7 +290,9 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
    - **Allocator guard:** startup refuses to double-count capital after a rename.
    - **Logging:** tests no longer write to the log files.
 
-   108 tests pass. Run 1's database is archived in `data/archive/run1-2026-10-14/`. The 7-day run restarts when the user runs `npm run paper`, and the backtester gets designed after that.
+   108 tests pass. Run 1's database is archived in `data/archive/run1-2026-10-14/`.
+
+**Superseded plan (October 15, 2026, evening).** The 7-day run was going to restart next, with the backtester after it. That order is reversed. The 7-day run is now postponed until the thesis, the kill criteria and the backtester exist (section 17). The paper run setup stays in the repo, ready for later.
 
 See `docs/JOURNAL.md` for details.
 
@@ -360,6 +367,114 @@ The user wants a GUI: a more visual version of the Telegram commands, with the f
   - Big glowing wind-down, halt and unhalt buttons with confirmation dialogs
 - **Safety:** no live-trading toggle in the GUI.
 - **Plumbing:** the GUI talks only to `ControlApi`, through a small localhost-only HTTP + WebSocket server. A separate frontend (likely React + Vite) connects to that server and never imports trading modules. Equity snapshots are already being recorded, so charts will have history from day one.
+
+---
+
+## 17. Scope Freeze and Strategy Focus (October 15, 2026)
+
+**This section wins wherever it conflicts with sections 1–16.** It records the outcome of a discussion between the user and an external advisor. The user wrote the summary in `deepseekconvo.md`; this is the maintained version.
+
+### 17.1 Why
+
+The project drifted from its intent. The goal was a trading bot. It grew a multi-bucket portfolio layer (allocator, global risk, registry, decision pipeline, ControlApi, Telegram, placeholder buckets) before any single strategy had a validated edge. The architecture is good and stays. The ordering was wrong.
+
+The user's own reading of the first paper run:
+
+> The bot works fine, but results so far give me the feeling it will keep trading flat, since the systems are good at preventing losses.
+
+That is the risk system succeeding in the absence of an edge to protect. It is not a bug. The machine is sound; the open question is whether Majors Trader has anything worth doing. The user also said:
+
+> I went in wanting a pure trading bot and ended up creating a bot with multiple bucket capability. [...] I've been overthinking.
+
+> I gotta focus on one thing at a time.
+
+### 17.2 Scope: Majors Trader only
+
+v1 is the Majors Trader bucket and nothing else. Memecoin Lab, System Test, Yield/Carry, Swing/Day and any traded reserve are future work. They are not built, expanded, refactored or optimized until Majors Trader has a documented thesis, a backtested result, and a paper or live track record that the user has reviewed and accepted.
+
+This is a freeze, not a deletion:
+- **Keep** the bucket base class, registry, intent helpers and `NullBucket`.
+- **Keep** the config entries for Memecoin Lab and System Test. They stay off.
+- **Do not** add shared services or abstractions justified only by a future bucket.
+- **The reserve stays.** It is capital held back, which is the right default while no edge is validated.
+
+### 17.3 Two missing pieces (both are the user's work)
+
+**A pre-registered thesis for Majors Trader.** Three sentences:
+1. What the user believes about ETH/USDC on Base (for example, how trends and chop behave).
+2. Why trend-following, mean reversion and the regime switch should capture that.
+3. Why the captured behavior should be worth more than costs. The paper round trip costs about 0.3% (a 0.05% fee and 0.10% slippage each way, plus volatility slippage), so the thesis should be measured against that.
+
+The thesis does not have to be right. It has to be specific enough to be wrong.
+
+**Explicit kill criteria.** Three numbers, written before the run:
+1. If after N trades expectancy is below X, stop.
+2. If max drawdown exceeds Y before N trades, stop.
+3. If live or paper results differ from the backtest by more than Z, stop and investigate.
+
+They should feel slightly pessimistic. The point is to commit in advance, so that the user cannot later argue that a losing strategy "just needs more time".
+
+**Where they live:** `docs/THESIS.md` (to be created by the user). It is empty until the user writes it.
+
+| Item | Status |
+| --- | --- |
+| Thesis (3 sentences) | NOT WRITTEN. User's work. |
+| Kill criteria N, X, Y, Z | NOT WRITTEN. User's work. |
+
+The AI worker may ask questions, structure the text, or offer clearly labeled candidates. It does not choose what the user believes or what counts as failure.
+
+### 17.4 Rules for the AI worker (these win over section 11)
+
+1. **Scope is Majors Trader only.** If asked to work on another bucket, ask whether Majors Trader is done first.
+2. **No abstractions for future buckets.** "We'll need it when bucket 3 arrives" is not a reason.
+3. **The backtester is the next build,** before the paper run, any parameter tuning or any new strategy.
+4. **The thesis and kill criteria are the user's.** If asked to write a thesis, give three candidates labeled as candidates, and ask which, if any, matches what the user believes.
+5. **Surface the thesis and kill criteria when results come in.** Ask: "Did the thing you believed actually happen? Are we approaching a kill criterion?" Do not let "it just needs more time" go unnamed.
+6. **Flag curve-fitting.** If a parameter change is proposed in response to a specific loss, say so, and ask whether the thesis or the outcome is driving it.
+7. **Small, reviewable increments.**
+8. **Do not drift back to multi-bucket work.** If a change to the shell, allocator, global risk or ControlApi is not required by Majors Trader, stop and ask.
+9. **System Test should test failure paths** when it is next used: a forced rejection, a forced risk-limit hit, a forced halt and a restart mid-position. (Proposed by the advisor; the user has not yet confirmed.)
+
+### 17.5 New order of work
+
+1. Update `VISION.md` and `.cursorrules` (done, awaiting the user's review).
+2. User writes the thesis.
+3. User writes the kill criteria.
+4. Spec the backtester (17.6).
+5. Build it.
+6. Run it over at least 6 months of data.
+7. Read the results, including "no edge".
+8. Only then resume the paper run, as an operational test and not a strategy test. A week with a handful of trades cannot show an edge.
+9. Decide: go live small, revise the thesis, or shelve Majors Trader.
+
+### 17.6 Backtester: starting spec
+
+The advisor wrote this as a starting spec, not a mandate. The user should edit it.
+
+For a given strategy, parameter set and window, output:
+- trade count (fewer than about 30 means the result is not meaningful, whatever the P&L);
+- win rate, with a confidence interval;
+- average win and average loss, in percent and dollars;
+- **expectancy per trade**, the number that matters;
+- max drawdown, peak to trough and its duration;
+- Sharpe or Sortino, with the caveat that they are unstable at low trade counts;
+- the equity curve, saved so runs can be compared;
+- **parameter sensitivity:** the same run with key parameters moved by ±10% and ±20%, flagging loudly if the sign of expectancy flips;
+- a **regime breakdown:** trend regimes against chop, to show whether the regime detector helps.
+
+Constraints:
+- It must use the **same code** as live for indicators, regime detection, strategies, sizing and risk. Separate implementations would make the backtest worthless.
+- It logs to SQLite in a schema compatible with the live `decisions` table, so backtest, paper and live runs can be compared.
+
+Engineering notes (from the agent, not the advisor):
+- Majors Trader runs on the wall clock and a live feed today, so "same code" means a replay clock and a candle-fed data source in place of `MarketData`.
+- The backfill is built for 24 hours. Six months of `eth_getLogs` on this pool needs chunking, resumability and a check on the Alchemy compute cost.
+- One-minute candles hide moves inside the minute, so tick-level stops are not reproducible from candles alone. Whether to store raw swaps is an open design question.
+- The entry rules and the fast-move filter added after the first paper run were calibrated on about 2 days of candles, in response to one event. The backtester should test them like any other parameter.
+
+### 17.7 What does not change
+
+The philosophy in section 2, the engineering patterns in section 7, the four-condition live gate, "exits are never blocked", the risk architecture, paper-first, the decision log (including `NO_TRADE`), ControlApi as the single operator surface (the GUI comes after profitability), and the `.cursorrules` and journal practices.
 
 ---
 

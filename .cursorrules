@@ -3,5 +3,13 @@
 - NEVER modify or delete `.env` files.
 - ALWAYS use Pino structured JSON logging for new error outputs.
 
+# Scope (see docs/VISION.md section 17)
+- v1 is Majors Trader only. Do not build, expand, refactor or optimize Memecoin Lab, System Test, Yield or Swing. If asked to, ask whether Majors Trader is done first.
+- Do not add shared services or abstractions justified only by a future bucket. Do not change the portfolio shell, allocator, global risk or ControlApi unless Majors Trader needs it.
+- The backtester is the next build, before any more paper running, parameter tuning or new strategy.
+- The thesis and the kill criteria are the user's work. Never present a thesis as the user's belief. Offer labeled candidates and ask.
+- When results arrive, remind the user of the thesis and kill criteria, and name "it just needs more time" if it comes up.
+- If a parameter change responds to a specific loss, say so and ask whether the thesis or the outcome is driving it.
+
 # Documentation
 - Whenever you make a code edit that alters trading logic or fixes a bug, automatically append a 1-line summary to CHANGELOG.md under the current version.

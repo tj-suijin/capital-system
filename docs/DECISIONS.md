@@ -162,6 +162,18 @@ A position starts slightly under water because of its fees and slippage. In prac
 
 **Paper slippage grows with volatility:** 0.10% plus 25% of the larger range of the newest two 1-minute candles. The fills in the 21:22 drop were 0.3–0.4% worse than that minute's close. Most of that was the price falling further after entry within the minute, and a real swap would suffer the same delay. In normal minutes the extra slippage is almost zero.
 
+## Scope freeze (Oct 15, 2026, user's choice after an advisor discussion)
+
+**v1 is Majors Trader only.** The portfolio shell was built before any strategy had a proven edge. The shell and the bucket abstraction stay. Other buckets stay off and get no work until Majors Trader has a thesis, a backtest and a reviewed track record. Full text in `VISION.md` section 17.
+
+**The backtester comes before the next paper run.** A paper run tests the plumbing; a handful of trades cannot show an edge. The 7-day run is postponed, and the order is now: thesis, kill criteria, backtester, at least 6 months of history, read the results, then paper as an operational test.
+
+**The thesis and the kill criteria are written by the user,** not by the agent, before the backtest is read. The agent may structure them and offer labeled candidates.
+
+**Agent behavior:** flag parameter changes that respond to a specific loss, and remind the user of the thesis and kill criteria when results come in. Both are in `.cursorrules`.
+
+Revisitable: the user can lift the freeze whenever they choose.
+
 ## Unvalidated parameters
 
 None of these numbers have been backtested or reviewed for live capital. They exist so the shell can run in paper mode. All are in `config/portfolio.js`.
@@ -207,4 +219,7 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 - The questions from the first 7.5 hours of the paper run were decided on Oct 15, 2026 (see "Bucket 1 fixes after the first paper run").
 - How should backtesting work for every bucket, and what must a strategy pass before it moves from backtest to shadow, paper and live?
 - How should risk profiles and dynamic allocation work? For example, idle capital could go to a stablecoin-farming bucket, and unproven strategies should not get more capital.
-- If the new entry rules leave too few trades in the 7-day run, which should be loosened first?
+- If the new entry rules leave too few trades in the 7-day run, which should be loosened first? (The run is now postponed; the backtester should answer this.)
+- What are the thesis and the kill criteria (N, X, Y, Z)? The user writes them.
+- Does the backtester need raw swaps, or are 1-minute candles enough? Candles cannot reproduce tick-level stops.
+- What will 6 months of `eth_getLogs` on this pool cost in Alchemy compute, and how long will the backfill take?
