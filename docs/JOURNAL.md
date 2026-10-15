@@ -4,6 +4,28 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 15, 2026 (session 6, continued): Model reminder before coding
+
+**Area:** Cursor agent rules, not trading code.
+
+**What changed:** Added `.cursor/rules/model-reminder.mdc` so every chat reminds the user which model to pick before writing code.
+
+**Why:** The user wants to stop defaulting to Claude Opus 5.5 with 1M context and high effort. That setup is overkill for this repo and burns Cursor's Other Models pool (or an Anthropic bill) on work Sonnet can do. They asked for a reminder until the habit sticks.
+
+**Decisions:**
+- Everyday building uses Claude Sonnet at about 200k context and medium effort.
+- Opus at about 200k, with high effort if they want extra care, is for money decisions: entries, exits, risk, sizing, allocation, backtester design, and reviews of paper runs or backtests.
+- 1M context is only for a chat that is actually full.
+- DeepSeek is optional for isolated mechanical work, not the main model for this project.
+
+**Not verified:** The reminder will show up in the next coding session. This chat did not write trading code.
+
+**Session wrap-up:** The user is stopping here and will most likely continue on the MacBook. This rule and journal note were committed and pushed so that machine has them after a pull. The 7-day paper run was not started.
+
+**Next steps:** On the MacBook, pull `main`, then design the backtester. Use Sonnet for everyday building and Opus only for money decisions. Start the 7-day paper run on the PC when leaving for a few days, and do not pull or restart the bot mid-run.
+
+---
+
 ## October 15, 2026 (session 6, continued): Renames, Telegram cleanup, and ready to restart
 
 **Area:** Bucket names and IDs, Telegram, the capital allocator, logging, and the restart of the 7-day run.

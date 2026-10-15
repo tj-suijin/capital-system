@@ -1,0 +1,21 @@
+---
+description: Remind the user which Cursor model to use before coding
+alwaysApply: true
+---
+
+# Model reminder before coding
+
+The user is training a habit: pick the model that matches the work, not the most expensive one every time. They use their own Anthropic key so Cursor quota is not the limit.
+
+**Before writing or changing code, config that affects trading, or tests,** start the reply with a short model reminder. Do not start coding in the same breath if they should switch. One or two lines is enough.
+
+| Work | Use |
+| --- | --- |
+| Everyday building: tests, Telegram, docs, refactors, plumbing | Claude Sonnet, ~200k context, medium effort |
+| Money decisions: entries, exits, risk, sizing, allocation, backtester design, paper-run or backtest review | Claude Opus, ~200k context, high effort if they want extra care |
+| A single chat that is actually full (rare; they usually start a new chat per topic) | Turn on 1M context |
+| Isolated mechanical code with no judgment | DeepSeek is optional and cheap. Do not use it as the main model for this project. |
+
+Do not recommend Opus 5.5 with 1M and high effort as the default. That combination is overkill here.
+
+Skip the reminder on pure discussion, questions, or reviews with no code change. If the work already matches the model they are likely on, a one-line confirmation is enough. You cannot switch their model picker; tell them what to select.
