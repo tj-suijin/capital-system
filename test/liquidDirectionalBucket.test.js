@@ -14,7 +14,7 @@ import { fakeClock, testConfig } from './helpers.js';
 
 const MIN = 60_000;
 const NOW = Date.UTC(2026, 9, 13, 12, 0, 30);
-const LD = CONFIG.buckets.liquidDirectional;
+const LD = CONFIG.buckets.majorsTrader;
 
 const path = (n, f) => Array.from({ length: n }, (_, i) => f(i));
 
@@ -58,7 +58,7 @@ class FakeMarket extends EventEmitter {
 
 async function makeBucket({ market = new FakeMarket(), trade = {} } = {}) {
   const config = { ...LD, trade: { ...LD.trade, ...trade } };
-  const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config, market });
+  const bucket = new LiquidDirectionalBucket({ id: 'majorsTrader', config, market });
   await bucket.start();
   return { bucket, market };
 }
@@ -147,11 +147,11 @@ test('LD bucket: volatility is the larger range of the newest two 1m candles', a
 });
 
 test('LD bucket: paperMinConfidence applies only in paper mode', async () => {
-  const paper = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: LD, market: new FakeMarket() });
+  const paper = new LiquidDirectionalBucket({ id: 'majorsTrader', config: LD, market: new FakeMarket() });
   assert.equal(paper.params.minConfidence, LD.strategy.paperMinConfidence);
   assert.equal(paper.status().minConfidence, LD.strategy.paperMinConfidence);
   for (const mode of ['shadow', 'live']) {
-    const b = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: { ...LD, mode }, market: new FakeMarket() });
+    const b = new LiquidDirectionalBucket({ id: 'majorsTrader', config: { ...LD, mode }, market: new FakeMarket() });
     assert.equal(b.params.minConfidence, LD.strategy.minConfidence);
   }
   assert.ok(LD.strategy.paperMinConfidence < LD.strategy.minConfidence);
@@ -215,28 +215,28 @@ test('LD bucket: marks at the last live swap, falls back to the newest candle, i
 // ---- through the portfolio pipeline ----
 
 test('LD bucket: paper position opens through the pipeline and closes at its stop', async () => {
-  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60 } } };
+  const config = { ...testConfig(), buckets: { majorsTrader: { ...LD, allocationPct: 0.60 } } };
   const store = openStore();
   const market = new FakeMarket();
-  const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });
+  const bucket = new LiquidDirectionalBucket({ id: 'majorsTrader', config: config.buckets.majorsTrader, market });
   const registry = new BucketRegistry().register(bucket);
   const pm = new PortfolioManager({ config, store, registry, clock: fakeClock(NOW) });
   pm.init();
   await bucket.start();
 
-  await pm.runBucketCycle('liquidDirectional');
-  const [open] = store.getOpenPositions('liquidDirectional');
+  await pm.runBucketCycle('majorsTrader');
+  const [open] = store.getOpenPositions('majorsTrader');
   assert.ok(open, 'a position was opened');
   assert.equal(open.tag, 'mean_reversion');
   assert.ok(open.stop_loss < open.entry_price && open.take_profit > open.entry_price);
-  assert.equal(store.getRecentDecisions(1, 'liquidDirectional')[0].outcome, 'APPROVED');
+  assert.equal(store.getRecentDecisions(1, 'majorsTrader')[0].outcome, 'APPROVED');
 
-  const [marked] = pm.openPositions('liquidDirectional');
+  const [marked] = pm.openPositions('majorsTrader');
   assert.equal(marked.markPrice, market.lastPrice);
   assert.ok(Math.abs(marked.unrealizedPnlUsd - (open.qty * market.lastPrice - open.notional_usd - open.open_fee_usd)) < 1e-9);
 
   market.lastPrice = open.stop_loss * 0.999;
-  await pm.runBucketCycle('liquidDirectional');
+  await pm.runBucketCycle('majorsTrader');
   const closed = store.getPosition(open.id);
   assert.equal(closed.status, 'closed');
   assert.match(closed.exit_reason, /^stop loss/);
@@ -244,17 +244,17 @@ test('LD bucket: paper position opens through the pipeline and closes at its sto
 });
 
 test('LD bucket: a swap past the stop closes the position between cycles', async () => {
-  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60 } } };
+  const config = { ...testConfig(), buckets: { majorsTrader: { ...LD, allocationPct: 0.60 } } };
   const store = openStore();
   const market = new FakeMarket();
-  const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });
+  const bucket = new LiquidDirectionalBucket({ id: 'majorsTrader', config: config.buckets.majorsTrader, market });
   const pm = new PortfolioManager({ config, store, registry: new BucketRegistry().register(bucket), clock: fakeClock(NOW) });
   pm.init();
   await bucket.start();
-  await pm.runBucketCycle('liquidDirectional');
-  const [open] = store.getOpenPositions('liquidDirectional');
+  await pm.runBucketCycle('majorsTrader');
+  const [open] = store.getOpenPositions('majorsTrader');
 
-  const off = bucket.subscribePrices(t => pm.onPriceTick('liquidDirectional', t));
+  const off = bucket.subscribePrices(t => pm.onPriceTick('majorsTrader', t));
   market.emit('price', { price: open.stop_loss * 1.0001, ts: NOW });
   await new Promise(setImmediate);
   assert.equal(store.getPosition(open.id).status, 'open');
@@ -275,10 +275,10 @@ test('LD bucket: after a restart, open positions keep their stops and the time l
   const dbPath = nodePath.join(dir, 'capital.db');
   // Two entries in a row, so the spacing and losing-position rules are off here.
   const risk = { ...LD.risk, minEntrySpacingMs: 0, noEntryWhileLosing: false };
-  const config = { ...testConfig(), buckets: { liquidDirectional: { ...LD, allocationPct: 0.60, risk } } };
+  const config = { ...testConfig(), buckets: { majorsTrader: { ...LD, allocationPct: 0.60, risk } } };
   const boot = async (clock, market = new FakeMarket()) => {
     const store = new Store(dbPath);
-    const bucket = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });
+    const bucket = new LiquidDirectionalBucket({ id: 'majorsTrader', config: config.buckets.majorsTrader, market });
     const pm = new PortfolioManager({ config, store, registry: new BucketRegistry().register(bucket), clock });
     pm.init();
     await bucket.start();
@@ -287,28 +287,28 @@ test('LD bucket: after a restart, open positions keep their stops and the time l
 
   // First process: opens two positions, then dies without stop().
   const a = await boot(fakeClock(NOW));
-  await a.pm.runBucketCycle('liquidDirectional');
-  await a.pm.runBucketCycle('liquidDirectional');
+  await a.pm.runBucketCycle('majorsTrader');
+  await a.pm.runBucketCycle('majorsTrader');
   const before = a.store.getOpenPositions();
   assert.equal(before.length, 2);
-  const ledgerBefore = a.store.getLedger('liquidDirectional');
+  const ledgerBefore = a.store.getLedger('majorsTrader');
   a.store.close();
 
   // Second process, 5 hours later: the price sits between stop and target,
   // so only the 4-hour limit can close them.
   const b = await boot(fakeClock(NOW + 5 * 3_600_000));
   assert.deepEqual(b.store.getOpenPositions().map(p => p.id), before.map(p => p.id));
-  assert.deepEqual(b.store.getLedger('liquidDirectional'), ledgerBefore);
+  assert.deepEqual(b.store.getLedger('majorsTrader'), ledgerBefore);
   b.market.stale = true;
-  await b.pm.runBucketCycle('liquidDirectional');
+  await b.pm.runBucketCycle('majorsTrader');
   assert.equal(b.store.getOpenPositions().length, 2, 'no exits without a live price');
 
   b.market.stale = false;
-  await b.pm.runBucketCycle('liquidDirectional');
+  await b.pm.runBucketCycle('majorsTrader');
   const closed = before.map(p => b.store.getPosition(p.id));
   assert.ok(closed.every(p => p.status === 'closed' && /^time limit/.test(p.exit_reason)), closed.map(p => p.exit_reason).join(', '));
 
-  const l = b.store.getLedger('liquidDirectional');
+  const l = b.store.getLedger('majorsTrader');
   assert.ok(Math.abs(l.in_use_usd - b.store.getOpenPositions().reduce((n, p) => n + p.notional_usd, 0)) < 1e-6);
   assert.ok(Math.abs(l.cash_usd + l.in_use_usd - (l.allocated_usd + l.realized_pnl_usd)) < 1e-6);
   b.store.close();

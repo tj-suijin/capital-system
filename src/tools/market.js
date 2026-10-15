@@ -9,7 +9,7 @@ import { LOCK_HELD_EXIT_CODE, acquireLock, lockPathFor } from '../shared/instanc
 import { createLogger } from '../shared/logger.js';
 
 const log = createLogger('MARKET_CLI');
-const bucket = CONFIG.buckets.liquidDirectional;
+const bucket = CONFIG.buckets.majorsTrader;
 const params = bucket.strategy;
 
 // It writes candles to the same database, so it cannot run beside `npm start`.

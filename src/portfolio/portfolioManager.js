@@ -465,6 +465,7 @@ export class PortfolioManager {
         pauseReason:   pause.reason,
         ...ledgers[b.id],
         openPositions: this.store.getOpenPositions(b.id).length,
+        pnl24hUsd:     this.store.realizedPnlSince(dayAgo, b.id),
         decisions24h:  this.store.decisionCountsSince(dayAgo, b.id),
         lastDecision:  this.store.getRecentDecisions(1, b.id)[0] ?? null,
         detail:        b.status(),
@@ -477,7 +478,14 @@ export class PortfolioManager {
       risk:        this.globalRisk.status(),
       reserve:     ledgers[RESERVE_ID] ?? null,
       buckets,
+      // Configured but not enabled: no ledger, no cycle.
+      off:         Object.entries(this.config.buckets).filter(([, c]) => !c.enabled).map(([id, c]) => ({ id, name: c.name ?? id })),
     };
+  }
+
+  // Display name for every configured bucket, enabled or not.
+  bucketNames() {
+    return Object.fromEntries(Object.entries(this.config.buckets).map(([id, c]) => [id, c.name ?? id]));
   }
 
   // -------------------------------------------------------------- helpers

@@ -29,13 +29,19 @@ const hooks = {
   },
 };
 
+// Under `node --test`, nothing goes to the log files: the report and the
+// error-burst checks read them, and tests log deliberate errors.
 function buildRoot() {
-  const level = process.env.LOG_LEVEL
-    ?? (process.env.NODE_TEST_CONTEXT ? 'silent' : CONFIG.log.level);
+  const testing = !!process.env.NODE_TEST_CONTEXT;
+  const level = process.env.LOG_LEVEL ?? (testing ? 'silent' : CONFIG.log.level);
 
   if (level === 'silent') return pino({ level });
 
   const dir = CONFIG.log.dir;
+  const files = testing ? [] : [
+    { target: 'pino/file', level, options: { destination: path.join(dir, 'app.log'), mkdir: true } },
+    { target: 'pino/file', level: 'error', options: { destination: path.join(dir, 'errors.log'), mkdir: true } },
+  ];
   const transport = pino.transport({
     targets: [
       {
@@ -43,8 +49,7 @@ function buildRoot() {
         level,
         options: { colorize: true, translateTime: 'SYS:yyyy-mm-dd HH:MM:ss', ignore: 'pid,hostname' },
       },
-      { target: 'pino/file', level, options: { destination: path.join(dir, 'app.log'), mkdir: true } },
-      { target: 'pino/file', level: 'error', options: { destination: path.join(dir, 'errors.log'), mkdir: true } },
+      ...files,
     ],
   });
   return pino({ level, hooks }, transport);

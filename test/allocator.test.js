@@ -16,6 +16,18 @@ test('init splits capital by allocation and puts the rest in reserve', () => {
   close(a.totalEquity(), 1000);
 });
 
+test('init refuses to add ledgers that would hand out capital twice (a renamed bucket on an old database)', () => {
+  const store = openStore();
+  new CapitalAllocator({ store, config: testConfig() }).init();
+
+  const renamed = testConfig();
+  renamed.buckets = { alphaNew: renamed.buckets.alpha, beta: renamed.buckets.beta };
+  assert.throws(() => new CapitalAllocator({ store, config: renamed }).init(), /would exceed the \$1000\.00 total\. Archive the database/);
+
+  const disabled = testConfig({ buckets: { beta: { enabled: false } } });
+  assert.doesNotThrow(() => new CapitalAllocator({ store, config: disabled }).init(), 'turning a bucket off keeps its ledger');
+});
+
 test('reserve bucket can never be allocated from', () => {
   const a = new CapitalAllocator({ store: openStore(), config: testConfig() });
   a.init();

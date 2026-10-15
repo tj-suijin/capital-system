@@ -2,7 +2,10 @@
 
 A multi-bucket autonomous capital system. A portfolio manager splits capital into **buckets**. Each bucket runs its own strategy, has its own risk limits, and can run in paper, shadow or live mode on its own. Global risk rules apply on top of all of them.
 
-The system is paper-first. **No live trading path exists yet.** Bucket 1 (LiquidDirectional) trades ETH/USDC on Uniswap V3 on Base in paper mode. The degen bucket is still a placeholder that always answers "no trade". The Exerciser is a test bucket, not a strategy: it opens small positions on a schedule to keep the machinery busy during long paper runs.
+The system is paper-first. **No live trading path exists yet.** Three buckets are configured; the ID in brackets is what Telegram commands take:
+- **Majors Trader** (`majorsTrader`) is bucket 1. It trades ETH/USDC on Uniswap V3 on Base in paper mode.
+- **Memecoin Lab** (`memecoinLab`) is still a placeholder that always answers "no trade". It is off.
+- **System Test** (`systemTest`) is a test bucket, not a strategy. It opens small positions on a schedule to keep the machinery busy during long paper runs. It is off since the first paper run proved those paths.
 
 The product vision is in [`docs/VISION.md`](docs/VISION.md).
 
@@ -58,8 +61,8 @@ config/portfolio.js        every tunable number (all UNVALIDATED)
 src/portfolio/             portfolio manager, capital allocator, health monitor, run summaries
 src/risk/                  global risk, bucket risk, position sizer
 src/buckets/               bucket base class, intents, registry, placeholder bucket
-src/buckets/liquidDirectional/  bucket 1: regime detector, strategies, analyst
-src/buckets/exerciser/     test bucket for long paper runs (not a strategy)
+src/buckets/liquidDirectional/  Majors Trader (bucket 1): regime detector, strategies, analyst, fast-move filter
+src/buckets/exerciser/     System Test bucket for long paper runs (not a strategy)
 src/analysis/              technical indicators
 src/data/                  Uniswap V3 pool, backfill, price stream, candles
 src/tools/                 standalone commands (market, report, notify)

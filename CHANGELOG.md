@@ -37,3 +37,7 @@ Terse list of trading-logic changes and bug fixes. The narrative history lives i
 - Bucket risk: new optional entry rules, set for bucket 1 and Degen: a 15-minute cooldown after a stop-out (BR_005), 10 minutes between entries on the same side (BR_006), and no entry while an open position is under water (BR_007).
 - Bucket 1: no entries during a fast move, when a 1m candle (the forming one or one of the last 5) ranges at least max(0.4%, 3× the previous hour's average); applies to both strategies.
 - Paper slippage now grows with volatility: 0.10% plus 25% of the larger range of the bucket's newest two 1m candles.
+- Buckets renamed, IDs included: `liquidDirectional` → `majorsTrader` (Majors Trader), `degenMemecoin` → `memecoinLab` (Memecoin Lab), `exerciser` → `systemTest` (System Test).
+- Memecoin Lab and System Test are disabled; with no ledger, their 5% stays in the reserve (40% on a fresh database).
+- Fix: test runs with `LOG_LEVEL` set wrote their deliberate errors into `logs/app.log` and `logs/errors.log`, which the report reads; tests never write to the log files now.
+- Fix: on an existing database, a renamed or newly enabled bucket got a new ledger while the old ledgers kept their capital, counting it twice; startup now refuses and asks to archive the database.

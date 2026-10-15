@@ -102,17 +102,18 @@ function checkLedgers(store, config, minute) {
 
 test('replay: three days through the full pipeline keep every ledger consistent', async () => {
   const config = testConfig({ capital: { totalUsd: 4000 }, paper: CONFIG.paper, alerts: CONFIG.alerts });
+  // System Test is off in config; the replay turns it on to keep the pipeline busy.
   config.buckets = {
-    liquidDirectional: CONFIG.buckets.liquidDirectional,
-    exerciser:         CONFIG.buckets.exerciser,
+    majorsTrader: CONFIG.buckets.majorsTrader,
+    systemTest:   { ...CONFIG.buckets.systemTest, enabled: true },
   };
   const store  = openStore();
   const market = new ReplayMarket(synthCandles(WARMUP + MINUTES));
   let now = START + WARMUP * MIN + 30_000;
   const clock = () => now;
 
-  const ld = new LiquidDirectionalBucket({ id: 'liquidDirectional', config: config.buckets.liquidDirectional, market });
-  const ex = new ExerciserBucket({ id: 'exerciser', config: config.buckets.exerciser, feed: ld, clock });
+  const ld = new LiquidDirectionalBucket({ id: 'majorsTrader', config: config.buckets.majorsTrader, market });
+  const ex = new ExerciserBucket({ id: 'systemTest', config: config.buckets.systemTest, feed: ld, clock });
   const pm = new PortfolioManager({ config, store, registry: new BucketRegistry().register(ld).register(ex), clock });
   pm.init();
   market.advanceTo(now);
@@ -121,8 +122,8 @@ test('replay: three days through the full pipeline keep every ledger consistent'
 
   for (let k = 0; k < MINUTES - 1; k++) {
     market.advanceTo(now);
-    await pm.runBucketCycle('liquidDirectional');
-    await pm.runBucketCycle('exerciser');
+    await pm.runBucketCycle('majorsTrader');
+    await pm.runBucketCycle('systemTest');
     if (k % 5 === 0) pm.heartbeat();
     checkLedgers(store, config, k);
     now += MIN;
@@ -131,18 +132,18 @@ test('replay: three days through the full pipeline keep every ledger consistent'
   const all = store.getRecentDecisions(1e6);
   const by = (bucket, outcome, code) => all.filter(d => d.bucket_id === bucket && d.outcome === outcome && (!code || d.code === code)).length;
   assert.equal(all.filter(d => d.outcome === 'ERROR').length, 0, 'no cycle errors');
-  assert.equal(all.filter(d => d.bucket_id === 'liquidDirectional').length, MINUTES - 1, 'bucket 1 decided every minute');
+  assert.equal(all.filter(d => d.bucket_id === 'majorsTrader').length, MINUTES - 1, 'bucket 1 decided every minute');
   assert.equal(pm.globalRisk.isHalted(), false);
 
   // The position cap is covered in exerciser.test.js; with these swings the
   // exerciser's tight stops close positions before a second one opens.
-  const exTrades = store.positionsOpenedBetween(0, Infinity).filter(p => p.bucket_id === 'exerciser');
-  assert.ok(exTrades.length > 20, `exerciser opened ${exTrades.length}`);  assert.ok(by('exerciser', 'REJECTED', 'BR_004') > 0, 'daily loss limit was hit');
-  const exLoss24h = -store.realizedPnlSince(now - 24 * 60 * MIN, 'exerciser');
+  const exTrades = store.positionsOpenedBetween(0, Infinity).filter(p => p.bucket_id === 'systemTest');
+  assert.ok(exTrades.length > 20, `exerciser opened ${exTrades.length}`);  assert.ok(by('systemTest', 'REJECTED', 'BR_004') > 0, 'daily loss limit was hit');
+  const exLoss24h = -store.realizedPnlSince(now - 24 * 60 * MIN, 'systemTest');
   assert.ok(exLoss24h < 80 * 0.02 + 0.5, `the daily limit bounds the loss (24h loss ${exLoss24h.toFixed(2)})`);
   for (const p of store.positionsClosedBetween(0, Infinity)) {
     assert.match(p.exit_reason, /^(stop loss|take profit|time limit|mean_reversion exit|trend_following exit)/);
-    if (p.bucket_id === 'exerciser') assert.ok(p.closed_at - p.opened_at <= 75 * MIN + MIN, 'exerciser never holds past its limit');
+    if (p.bucket_id === 'systemTest') assert.ok(p.closed_at - p.opened_at <= 75 * MIN + MIN, 'exerciser never holds past its limit');
     else assert.ok(p.closed_at - p.opened_at <= 4 * 60 * MIN + MIN, 'bucket 1 never holds past its limit');
   }
   assert.ok(store.equitySnapshotsBetween('portfolio', 0, Infinity).length > 800);

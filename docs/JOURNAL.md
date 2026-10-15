@@ -4,6 +4,48 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 15, 2026 (session 6, continued): Renames, Telegram cleanup, and ready to restart
+
+**Area:** Bucket names and IDs, Telegram, the capital allocator, logging, and the restart of the 7-day run.
+
+**What happened:**
+- **The fixes were committed and pushed.** The agent committed them as `6be9bf7`, at the user's request, and pushed it together with `0c46d45` to GitHub.
+- **The buckets were renamed, IDs included,** so Telegram commands use the new IDs, such as `/pause majorsTrader`. The code folders and class names keep their old names.
+
+  | Old ID | New ID | Name |
+  | --- | --- | --- |
+  | `liquidDirectional` | `majorsTrader` | Majors Trader |
+  | `degenMemecoin` | `memecoinLab` | Memecoin Lab |
+  | `exerciser` | `systemTest` | System Test |
+- **Memecoin Lab and System Test are off** (`enabled: false`). A disabled bucket gets no ledger, so on a fresh database the reserve holds 40% ($1,600) and Majors Trader holds $2,400.
+- **The Telegram cleanup**, in the layout the user approved:
+  - `/status` shows the portfolio in two lines. Each running bucket gets a line with its equity, open positions and their P&L, and its realized P&L over 24 hours, plus its regime. Each bucket that is off or only a placeholder gets one line: "⚪ Memecoin Lab: OFF".
+  - `/buckets` lists every bucket with the ID the commands take.
+  - The start message lists which buckets are running and which are off.
+  - The digest adds the same OFF lines and shows rejection reasons in words instead of codes like `BR_006`.
+  - Open, close, alert, `/positions` and `/decisions` messages use bucket names instead of IDs. Underscores in reasons are shown as spaces, and dollar amounts get thousands separators.
+- **New guard in the allocator.** On an existing database, a renamed or newly enabled bucket would get a new ledger while the old ledgers kept their capital, so it would be counted twice. Startup now refuses and says to archive the database.
+- **Logging fix.** The agent had set `LOG_LEVEL=error` in its shell for a replay script and then ran the tests in the same shell. That made the test processes write their deliberate errors (fake halts, failed price lookups) into the real `logs/app.log` and `logs/errors.log` between 01:43 and 02:01. Test processes now never write to the log files, whatever `LOG_LEVEL` says. The stray lines are older than the new run, and the report only reads log lines inside the run window, so they don't affect it.
+- **Run 1's database was archived** to `data/archive/run1-2026-10-14/capital.db`. `data/capital.db` no longer exists, so the next start creates a fresh one.
+- **Smoke run.** The agent ran a smoke test on a separate database (`data/smoke/`, deleted afterwards) for about 5 minutes.
+  - **Ledgers:** only `majorsTrader` ($2,400) and the reserve ($1,600) were created.
+  - **Data:** 24 hours of candles were backfilled and live candles kept arriving.
+  - **Decisions:** Majors Trader decided every minute; the market was in a downtrend, so there were no entries.
+  - **Telegram:** it sent its start message to the user's phone. The agent ended the process with a kill, so no "stopped" message was sent.
+
+**Decisions:** all recorded in `docs/DECISIONS.md` ("Plain names, short messages" and "Bucket names").
+
+**Not verified:**
+- No position opened during the smoke run, so tick-level stops have only been exercised by the tests (108 passing).
+- How the new Telegram messages look on the phone, apart from the start message.
+
+**Next steps:**
+1. The user starts the 7-day run from their own PowerShell window: `npm run paper`. Windows Update is still paused, but its pause may need extending to cover the full 7 days.
+2. Design the backtester while the run goes.
+3. Later: research on indicators and regimes, then risk profiles and dynamic allocation.
+
+---
+
 ## October 15, 2026 (session 6): Bucket 1 fixes after the first paper run
 
 **Area:** Bucket 1 (LiquidDirectional), bucket risk, the paper executor and the portfolio manager's exit path.

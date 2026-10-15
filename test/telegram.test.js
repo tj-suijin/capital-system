@@ -62,8 +62,8 @@ test('telegram: the digest covers equity, trades, decisions, rejections and heal
 
   const text = tg.digest(start, 'last 12h');
   assert.match(text, /Digest<\/b> — run day 1 of 7, last 12h/);
-  assert.match(text, /Equity \$1000\.\d\d \| HWM/);
-  assert.match(text, /<b>Alpha<\/b>/);
+  assert.match(text, /Equity \$1,000\.\d\d \| Drawdown 0\.00% \| Exposure/);
+  assert.match(text, /▶️ <b>Alpha<\/b>: \$600\.\d\d, 0 open/);
   assert.match(text, /Trades: 1 opened, 1 closed \(1 won\), P&amp;L \+\$0\.\d\d/);
   assert.match(text, /Decisions: 3 — 2 no-trade, 1 opened, 0 rejected/);
   assert.match(text, /Top no-trade: script empty ×2/);
@@ -94,7 +94,31 @@ test('telegram: alerts and the start message read clearly', () => {
 
   tg.api.pm.startInfo = { previousExit: 'unclean', openPositions: 2 };
   tg.digestTimes = ['08:00', '21:00'];
-  assert.match(tg._startMessage(), /did not shut down cleanly \(crash, kill or reboot\)\. Open positions: 2\nDigests at 08:00 and 21:00/);
+  assert.match(tg._startMessage(), /did not shut down cleanly \(crash, kill or reboot\)\. Open positions: 2\nRunning: Alpha \(paper\), Beta \(paper\)\nDigests at 08:00 and 21:00/);
+});
+
+test('telegram: buckets that are off or not built get one line; events use bucket names', async () => {
+  const config = testConfig({ buckets: { gamma: { enabled: false, name: 'Gamma Lab', mode: 'paper', allocationPct: 0.05, risk: {} } } });
+  const { pm, store, registry } = makePortfolio({ config });
+  pm.init();
+  registry.get('beta').status = () => ({ placeholder: true });
+  const sent = [];
+  const tg = new TelegramControl({
+    api: new ControlApi({ portfolio: pm, store }), token: 't', chatId: '1', sleepFn: async () => {},
+    fetchFn: async (url, opts) => { sent.push(JSON.parse(opts.body).text); return { ok: true, json: async () => ({ ok: true }) }; },
+  });
+
+  const status = await tg.handle('/status');
+  assert.match(status, /▶️ <b>Alpha<\/b> \(paper\)\n {2}\$600\.00 \| 0 open \| P&amp;L 24h \+\$0\.00/);
+  assert.match(status, /⚪ Beta: NOT BUILT\n⚪ Gamma Lab: OFF$/);
+  assert.doesNotMatch(status, /<b>Beta<\/b>/);
+
+  const buckets = await tg.handle('/buckets');
+  assert.match(buckets, /▶️ Alpha \[alpha\]: paper \| \$600\.00 \| 0 open/);
+  assert.match(buckets, /⚪ Gamma Lab \[gamma\]: OFF/);
+  assert.match(tg._startMessage(), /Running: Alpha \(paper\)\nOff: Beta, Gamma Lab/);
+
+  assert.equal(tg.formatAlert({ type: 'DATA_UP', bucketId: 'alpha', downForMs: MIN }), '📡 Data back [Alpha] after 60s');
 });
 
 test('telegram: /digest takes an optional number of hours', async () => {

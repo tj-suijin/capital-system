@@ -6,7 +6,7 @@ import { meanReversion } from '../src/buckets/liquidDirectional/meanReversion.js
 import { REGIME, detectRegime } from '../src/buckets/liquidDirectional/regimeDetector.js';
 import { trendFollowing } from '../src/buckets/liquidDirectional/trendFollowing.js';
 
-const P = CONFIG.buckets.liquidDirectional.strategy;
+const P = CONFIG.buckets.majorsTrader.strategy;
 
 function candles(closes) {
   return closes.map((c, i) => {

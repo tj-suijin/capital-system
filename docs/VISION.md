@@ -272,13 +272,20 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
 
    The findings and the open questions are in `docs/JOURNAL.md` (Oct 15, 2026) and in `reports/paper-run-20261015-0059.md`, which is local and gitignored.
 
-   **Fixes from that review (session 6, Oct 15, 2026)** are coded and tested (106 tests passing). They wait for the user's review and commit:
+   **Fixes from that review (session 6, Oct 15, 2026)** were committed as `6be9bf7` and pushed:
    - stops and targets are checked on every price tick;
    - the bucket-risk settings gain a cooldown after a stop-out, spacing between entries, and no adding to a losing position;
    - bucket 1 gains a fast-move filter;
    - paper slippage grows with volatility.
 
-   Next comes renaming bucket 1 to Majors Trader, turning off Degen and the Exerciser, and cleaning up Telegram. Then the 7-day run restarts on a fresh database, and after that the backtester gets designed.
+   **Then, in the same session:**
+   - **Renames, IDs included:** bucket 1 is now Majors Trader (`majorsTrader`), the degen bucket Memecoin Lab (`memecoinLab`), and the Exerciser System Test (`systemTest`).
+   - **Two buckets off:** Memecoin Lab and System Test are switched off, so the reserve is 40%.
+   - **Telegram:** messages use names, and buckets that are off get one line.
+   - **Allocator guard:** startup refuses to double-count capital after a rename.
+   - **Logging:** tests no longer write to the log files.
+
+   108 tests pass. Run 1's database is archived in `data/archive/run1-2026-10-14/`. The 7-day run restarts when the user runs `npm run paper`, and the backtester gets designed after that.
 
 See `docs/JOURNAL.md` for details.
 
@@ -308,7 +315,7 @@ See `docs/JOURNAL.md` for details.
 - **Changing allocation percentages in config does not move capital** that is already in the ledgers. Rebalancing is a deliberate, manual act.
 - **Starting parameters (all UNVALIDATED):**
   - $4,000 paper capital (raised from $1,000 for the paper run)
-  - LiquidDirectional 60%, DegenMemecoin 3%, Exerciser 2% (a test bucket for the paper run), Reserve 35% (the reserve also holds the future Yield/Swing share)
+  - Majors Trader 60%, Memecoin Lab 3% (off), System Test 2% (a test bucket; off), Reserve 35%, or 40% while both are off (the reserve also holds the future Yield/Swing share)
   - Bucket 1 enters at 55% confidence in shadow and live, 45% in paper
   - Paper fee 0.05%, slippage 0.10% plus 25% of the recent 1m range
   - Buckets evaluate every 60 seconds; heartbeat every 5 minutes

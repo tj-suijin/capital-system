@@ -71,7 +71,7 @@ Each bucket has a persisted ledger with four fields: allocated, cash, in use, an
 
 **Equity is marked to market:** cash plus in use plus the unrealized P&L of open positions. The ledger only moves when a position opens or closes. `valuation.js` values each open position at `qty × mark price` and subtracts its notional and the opening fee already paid. The mark is a mid price, so estimated exit costs are not deducted. Each bucket supplies marks for its own symbols through `markPrice(symbol, now)`. Bucket 1 uses the last live pool swap, or the newest stored 1-minute candle when the feed hasn't ticked. A position without a price is valued at cost. Marked equity feeds sizing, bucket and global risk, snapshots, status and Telegram. `ControlApi.getOpenPositions()` returns each position with its mark, its age, its value and its unrealized P&L.
 
-Ledgers are created on first run from `config/portfolio.js`. After that they are the source of truth. Changing percentages in config only logs a warning.
+Ledgers are created on first run from `config/portfolio.js`, for enabled buckets only; a disabled bucket's share stays in the reserve. After that they are the source of truth. Changing percentages in config only logs a warning. Startup fails if a new ledger (for example a renamed or newly enabled bucket) would push the total allocated past `capital.totalUsd`, because that capital is already held by the existing ledgers.
 
 ## Risk
 
@@ -157,7 +157,7 @@ MarketData.start()
 
 `src/analysis/indicators.js` holds pure indicator math: EMA, Wilder RSI, MACD, Bollinger Bands, Wilder ADX and swing low.
 
-`src/buckets/liquidDirectional/` holds the strategy logic. It's all pure functions that take candles and parameters:
+Bucket 1 is **Majors Trader** (ID `majorsTrader`). Its code keeps the older name: `src/buckets/liquidDirectional/` holds the strategy logic. It's all pure functions that take candles and parameters:
 
 | Regime (5m candles) | Strategy (1m candles) |
 | --- | --- |
@@ -174,7 +174,7 @@ MarketData.start()
 - **Fast moves:** no entry while one of the newest 6 one-minute candles has a range of at least the larger of 0.4% and 3 times the average of the 60 before them (`fastMove.js`). The newest candle may still be forming, because the candle builder saves the open candle on every swap.
 - **Entry:** the stop must be below the live price, and its distance is clamped to 0.3%–3%. A target must be at least 0.4% away. The portfolio manager places both as percentages of the intent's price (the market price), not the fill price. The intent carries `tag` (the strategy), which is stored on the position.
 - **Exits,** checked first in every cycle at the live price: stop loss, take profit, the opening strategy's exit signal, and the 4-hour limit. Stops and targets are also checked on every swap through `subscribePrices`. No exits are requested while the feed is stale.
-- **Volatility:** `volatilityPct()` is the larger range of the newest two 1-minute candles. The Exerciser borrows both the prices and the volatility from bucket 1.
+- **Volatility:** `volatilityPct()` is the larger range of the newest two 1-minute candles. System Test (`ExerciserBucket`, off by default) borrows both the prices and the volatility from bucket 1.
 - **Startup:** `start()` starts its `MarketData`. If that fails, the bucket answers no-trade and retries every minute.
 
 ## Known limitations

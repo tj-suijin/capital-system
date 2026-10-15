@@ -51,7 +51,7 @@ export function buildReport({ store, config = CONFIG, sinceMs, untilMs, logDir =
   const sum  = summarizeWindow({ store, sinceMs, untilMs });
   const out  = [];
   const span = untilMs - sinceMs;
-  const pool = config.buckets.liquidDirectional?.market?.pool;
+  const pool = config.buckets.majorsTrader?.market?.pool;
 
   out.push(`# Paper run report`, '');
   out.push(`Window: ${when(sinceMs)} to ${when(untilMs)} (${(span / (24 * HOUR)).toFixed(2)} days${config.paperRun?.days ? ` of ${config.paperRun.days} planned` : ''}).`, '');

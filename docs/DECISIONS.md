@@ -62,6 +62,28 @@ Each entry records what was decided, why, and whether it can be revisited. The f
 
 **Everything goes through `ControlApi`.** Telegram is a thin client of it, and the future GUI will be too. That keeps a single place where commands are defined and checked.
 
+**Plain names, short messages** (Oct 15, 2026, user's choice).
+- **Names in messages:** bucket names, not IDs. IDs appear only in `/buckets`, because that's what commands take.
+- **Idle buckets:** a bucket that is off or only a placeholder gets one line ("OFF" or "NOT BUILT") instead of a block of zeros.
+- **Rejections:** the digest shows the reason in words, not the code.
+- **`/status`:** a bucket's line shows its equity, its open positions and their P&L, and its realized P&L over 24 hours. Decision counts are left to the digest.
+
+## Bucket names (Oct 15, 2026)
+
+**The buckets were renamed, IDs included** (user's choice). The renames were done before the fresh database, while changing the IDs cost nothing.
+
+| Old ID and name | New ID and name |
+| --- | --- |
+| `liquidDirectional`, LiquidDirectional | `majorsTrader`, Majors Trader |
+| `degenMemecoin`, Degen Memecoin | `memecoinLab`, Memecoin Lab |
+| `exerciser`, Exerciser (test only) | `systemTest`, System Test |
+
+The code folders and class names keep the old names. "Liquidity Pool Trader" was rejected, because in DeFi "liquidity provider" means depositing into a pool, which bucket 1 doesn't do.
+
+**Memecoin Lab and System Test are off for the next 7-day run** (user's choice). Memecoin Lab has no strategy yet. System Test already proved the open, close and alert paths in the first run. A disabled bucket gets no ledger, so their 5% stays in the reserve, which is now 40%.
+
+**A renamed bucket can't silently double the capital.** On an old database, the new ID would get a fresh ledger next to the old one. Startup therefore fails when new ledgers would push the total allocated past `capital.totalUsd`.
+
 ## Bucket 1 market data and strategies
 
 **Uniswap V3 WETH/USDC 0.05% pool on Base** (`0xd0b53D9277642d899DF5C87A3966A349A798F224`). It's the standard fee tier for this pair. At startup the address, token order and fee are checked against the official Uniswap V3 factory, and any mismatch stops startup. V4 is not used yet: its pools live inside one shared contract and emit a different event, so it would be a separate adapter.
@@ -147,13 +169,13 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 | Parameter | Value |
 | --- | --- |
 | Paper capital | $4,000 (was $1,000 until the paper run) |
-| Allocation: LiquidDirectional / DegenMemecoin / Exerciser / Reserve | 60% / 3% / 2% / 35% |
+| Allocation: Majors Trader / Memecoin Lab / System Test / Reserve | 60% / 3% (off) / 2% (off) / 35%, so 40% in reserve while both are off |
 | Global daily loss limit | 3% of high-water mark |
 | Global weekly loss limit | 8% of high-water mark |
 | Max drawdown (hard halt) | 15% |
 | Max gross exposure | 50% of equity |
-| LiquidDirectional: max positions, max size, risk per trade, daily loss | 2, 10% of bucket, 1%, 5% |
-| DegenMemecoin: max positions, max size, risk per trade, daily loss | 1, 25% of bucket, 5%, 10% |
+| Majors Trader: max positions, max size, risk per trade, daily loss | 2, 10% of bucket, 1%, 5% |
+| Memecoin Lab: max positions, max size, risk per trade, daily loss | 1, 25% of bucket, 5%, 10% |
 | Paper fee | 0.05% (Uniswap 0.05% tier) |
 | Paper slippage | 0.10% plus 25% of the larger range of the bucket's newest two 1m candles |
 | Evaluation interval | 60 seconds per bucket |
@@ -168,7 +190,7 @@ None of these numbers have been backtested or reviewed for live capital. They ex
 | Bucket 1: stop clamp | 0.3% to 3% below entry |
 | Bucket 1: minimum target distance | 0.4% |
 | Bucket 1: max hold | 4 hours |
-| Bucket 1 and Degen: entry rules | 15-minute cooldown after a stop-out; 10 minutes between same-side entries; no entry while a position is under water |
+| Majors Trader and Memecoin Lab: entry rules | 15-minute cooldown after a stop-out; 10 minutes between same-side entries; no entry while a position is under water |
 | Bucket 1: fast-move filter | 1m range of at least max(0.4%, 3× the average of the 60 candles before) in the forming candle or the last 5 |
 | Tick exits | ticks older than 10 seconds are ignored |
 | Exerciser | $30 every 30 minutes; 0.3% stop and target; 75-minute limit; max 2 open; 40% max size; 2% daily loss |

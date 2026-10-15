@@ -11,7 +11,8 @@ import { fakeClock, testConfig } from './helpers.js';
 const MIN = 60_000;
 const SLOT = 30 * MIN;
 const T0 = Date.UTC(2026, 9, 14, 12, 0, 10); // 10 s into a slot
-const EX = CONFIG.buckets.exerciser;
+// Off in config since the first paper run; these tests turn it on.
+const EX = { ...CONFIG.buckets.systemTest, enabled: true };
 
 class FakeFeed {
   constructor(price = 2500) { this.id = 'feed'; this.price = price; this.live = true; }
@@ -26,6 +27,7 @@ async function makeBucket(clock = fakeClock(T0), feed = new FakeFeed()) {
 }
 
 test('exerciser: config matches the agreed test rules', () => {
+  assert.equal(CONFIG.buckets.systemTest.enabled, false);
   assert.equal(EX.mode, 'paper');
   assert.equal(EX.paperOnly, true);
   assert.equal(EX.allocationPct, 0.02);
@@ -78,9 +80,9 @@ test('exerciser: exits on stop, target and the 75-minute limit', async () => {
 });
 
 test('exerciser: the registry wires it to bucket 1\'s feed, and refuses a missing feed', () => {
-  const registry = createDefaultRegistry(CONFIG, { store: openStore() });
-  const ex = registry.get('exerciser');
-  const ld = registry.get('liquidDirectional');
+  const registry = createDefaultRegistry({ ...CONFIG, buckets: { ...CONFIG.buckets, systemTest: EX } }, { store: openStore() });
+  const ex = registry.get('systemTest');
+  const ld = registry.get('majorsTrader');
   assert.equal(ex.feed, ld);
   const seen = [];
   const off = ex.subscribePrices(t => seen.push(t));
@@ -88,8 +90,9 @@ test('exerciser: the registry wires it to bucket 1\'s feed, and refuses a missin
   off();
   ld.market.emit('price', { price: 2501, ts: 2 });
   assert.deepEqual(seen, [{ symbol: 'ETH/USDC', price: 2500, ts: 1 }]);
-  const broken = { ...CONFIG, buckets: { exerciser: EX } };
-  assert.throws(() => createDefaultRegistry(broken, { store: openStore() }), /Exerciser feed "liquidDirectional"/);
+  const broken = { ...CONFIG, buckets: { systemTest: EX } };
+  assert.throws(() => createDefaultRegistry(broken, { store: openStore() }), /System Test feed "majorsTrader"/);
+  assert.equal(createDefaultRegistry(CONFIG, { store: openStore() }).get('systemTest'), null, 'off by default');
 });
 
 test('exerciser: through the pipeline it trips its position cap, then its daily loss limit', async () => {

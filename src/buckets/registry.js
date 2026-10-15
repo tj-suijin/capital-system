@@ -6,16 +6,16 @@ import { ExerciserBucket } from './exerciser/exerciserBucket.js';
 import { LiquidDirectionalBucket } from './liquidDirectional/liquidDirectionalBucket.js';
 import { NullBucket } from './null/nullBucket.js';
 
-// deps: { store, chain, registry }
+// Keyed by bucket ID (config.buckets). deps: { store, chain, registry }
 const FACTORIES = {
-  liquidDirectional: (id, cfg, deps) => new LiquidDirectionalBucket({
+  majorsTrader: (id, cfg, deps) => new LiquidDirectionalBucket({
     id, config: cfg,
     market: new MarketData({ ethers, store: deps.store, market: cfg.market, chain: deps.chain }),
   }),
-  degenMemecoin: (id, cfg) => new NullBucket({ id, config: cfg }),
-  exerciser: (id, cfg, deps) => {
+  memecoinLab: (id, cfg) => new NullBucket({ id, config: cfg }),
+  systemTest: (id, cfg, deps) => {
     const feed = deps.registry.get(cfg.feed);
-    if (!feed?.livePrice) throw new Error(`Exerciser feed "${cfg.feed}" is not an enabled bucket with a live price, or is listed after the exerciser`);
+    if (!feed?.livePrice) throw new Error(`System Test feed "${cfg.feed}" is not an enabled bucket with a live price, or is listed after it`);
     return new ExerciserBucket({ id, config: cfg, feed });
   },
 };

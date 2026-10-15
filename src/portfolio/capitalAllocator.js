@@ -41,6 +41,21 @@ export class CapitalAllocator {
 
     const ts = this.clock();
     const wanted = [...buckets.map(([id, b]) => [id, total * b.allocationPct]), [RESERVE_ID, total * (1 - sumPct)]];
+
+    // New ledgers next to existing ones (a renamed or newly added bucket)
+    // would hand out capital that the existing ledgers already hold.
+    const existing = this.store.getAllLedgers();
+    const missing  = wanted.filter(([id]) => !existing.some(l => l.bucket_id === id));
+    const heldUsd  = existing.reduce((s, l) => s + l.allocated_usd, 0);
+    const addedUsd = missing.reduce((s, [, amount]) => s + amount, 0);
+    if (existing.length && missing.length && heldUsd + addedUsd > total + 0.01) {
+      throw new Error(
+        `Database already allocates $${heldUsd.toFixed(2)} (${existing.map(l => l.bucket_id).join(', ')}); `
+        + `adding ${missing.map(([id]) => id).join(', ')} would exceed the $${total.toFixed(2)} total. `
+        + 'Archive the database and start fresh, or rebalance by hand.',
+      );
+    }
+
     for (const [id, amount] of wanted) {
       const existing = this.store.getLedger(id);
       if (!existing) {

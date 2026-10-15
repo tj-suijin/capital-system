@@ -19,9 +19,19 @@ export class ControlApi {
     return this.pm.status();
   }
 
+  // Running buckets, then configured buckets that are off (state 'off').
   listBuckets() {
-    return this.pm.status().buckets.map(({ id, name, mode, paused, equityUsd, openPositions }) =>
-      ({ id, name, mode, paused, equityUsd, openPositions }));
+    const s = this.pm.status();
+    return [
+      ...s.buckets.map(({ id, name, mode, paused, equityUsd, openPositions, detail }) =>
+        ({ id, name, mode, paused, equityUsd, openPositions, state: detail?.placeholder ? 'not_built' : 'on' })),
+      ...s.off.map(({ id, name }) => ({ id, name, state: 'off' })),
+    ];
+  }
+
+  // { [bucketId]: display name } for every configured bucket.
+  getBucketNames() {
+    return this.pm.bucketNames();
   }
 
   getDecisions({ bucketId = null, limit = 20 } = {}) {

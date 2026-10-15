@@ -3,9 +3,11 @@
 // digests. Inbound: operator commands. Only messages from TELEGRAM_CHAT_ID
 // are accepted.
 import { CONFIG } from '../../config/portfolio.js';
+import { E } from '../shared/errors.js';
 import { createLogger } from '../shared/logger.js';
 
 const log = createLogger('TELEGRAM');
+const CODE_MSG = Object.fromEntries(Object.values(E).map(d => [d.code, d.msg]));
 
 const SEND_TIMEOUT_MS = 15_000;
 const POLL_WAIT_S     = 25;
@@ -18,7 +20,7 @@ const HOUR            = 3_600_000;
 const HELP = [
   '<b>Commands</b>',
   '/status — portfolio + every bucket',
-  '/buckets — bucket list',
+  '/buckets — bucket list with the IDs the commands below take',
   '/positions [bucket] — open positions at the latest price',
   '/decisions [bucket] — last 5 decisions',
   '/digest [hours] — summary of the last hours (default 12)',
@@ -31,9 +33,11 @@ const HELP = [
 ].join('\n');
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const usd = n => `$${(n ?? 0).toFixed(2)}`;
+const usd = n => `$${(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = n => `${((n ?? 0) * 100).toFixed(2)}%`;
-const signedUsd = n => `${n < 0 ? '-' : '+'}$${Math.abs(n ?? 0).toFixed(2)}`;
+const signedUsd = n => `${n < 0 ? '-' : '+'}${usd(Math.abs(n ?? 0))}`;
+const words = s => String(s ?? '').replace(/_/g, ' ');
+const regimeLabel = r => words(r).toLowerCase().replace(/^\w/, c => c.toUpperCase());
 const age = ms => (ms < 120_000 ? `${Math.round(ms / 1000)}s` : ms < 7_200_000 ? `${Math.round(ms / 60_000)}m` : `${(ms / 3_600_000).toFixed(1)}h`);
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const localHhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -71,10 +75,10 @@ export class TelegramControl {
       return;
     }
     this._unsubs.push(
-      this.api.on('fill',  e => this.send(`🟢 <b>OPEN</b> [${esc(e.bucketId)}] ${esc(e.position.symbol)}\nSize: ${usd(e.position.notional_usd)} @ ${e.position.entry_price.toFixed(4)}\n${esc(e.position.intent_reason)}`)),
-      this.api.on('close', e => this.send(`${e.pnlUsd >= 0 ? '✅' : '🔴'} <b>CLOSE</b> [${esc(e.bucketId)}] ${esc(e.position.symbol)}\nP&amp;L: ${usd(e.pnlUsd)}\n${esc(e.position.exit_reason)}`)),
+      this.api.on('fill',  e => this.send(`🟢 <b>OPEN</b> [${this._name(e.bucketId)}] ${esc(e.position.symbol)}\nSize: ${usd(e.position.notional_usd)} @ ${e.position.entry_price.toFixed(2)}\n${esc(words(e.position.intent_reason))}`)),
+      this.api.on('close', e => this.send(`${e.pnlUsd >= 0 ? '✅' : '🔴'} <b>CLOSE</b> [${this._name(e.bucketId)}] ${esc(e.position.symbol)}\nP&amp;L: ${signedUsd(e.pnlUsd)}\n${esc(words(e.position.exit_reason))}`)),
       this.api.on('risk',  e => this.send(`🛑 <b>HALT</b>\n${esc(e.reason)}`)),
-      this.api.on('control', e => this.send(`⚙️ ${esc(e.type)}${e.bucketId ? ` [${esc(e.bucketId)}]` : ''}`)),
+      this.api.on('control', e => this.send(`⚙️ ${esc(words(e.type))}${e.bucketId ? ` [${this._name(e.bucketId)}]` : ''}`)),
       this.api.on('alert', e => this.send(this.formatAlert(e))),
     );
     this._poll();
@@ -210,7 +214,7 @@ export class TelegramControl {
     const ev   = sum.events;
     const lines = [
       `📋 <b>Digest</b> — ${run.day ? `run day ${run.day}${run.days ? ` of ${run.days}` : ''}, ` : ''}${esc(label)}${r.halted ? ' 🛑 HALTED' : ''}${s.windingDown ? ' ⏳ WIND-DOWN' : ''}`,
-      `Equity ${usd(r.equityUsd)} | HWM ${usd(r.hwmUsd)} | DD ${pct(r.drawdownPct)} | Exposure ${pct(r.grossExposurePct)}`,
+      `Equity ${usd(r.equityUsd)} | Drawdown ${pct(r.drawdownPct)} | Exposure ${pct(r.grossExposurePct)}`,
     ];
     if (run.complete) lines.push(`✅ The ${run.days}-day paper run is complete. Run <code>npm run report</code> and review.`);
 
@@ -218,16 +222,16 @@ export class TelegramControl {
       if (b.detail?.placeholder) continue;
       const t = sum.trades[b.id];
       const d = sum.buckets[b.id];
-      lines.push('', `<b>${esc(b.name)}</b> — equity ${usd(b.equityUsd)}, ${b.openPositions} open, unrealized ${signedUsd(b.unrealizedPnlUsd)}`);
+      lines.push('', `${b.paused ? '⏸' : '▶️'} <b>${esc(b.name)}</b>: ${usd(b.equityUsd)}, ${b.openPositions} open${b.openPositions ? ` (${signedUsd(b.unrealizedPnlUsd)})` : ''}`);
       lines.push(t
         ? `  Trades: ${t.opened} opened, ${t.closed} closed (${t.wins} won), P&amp;L ${signedUsd(t.pnlUsd)}, fees ${usd(t.feesUsd)}`
         : '  Trades: none');
       if (!d) continue;
       const c = d.counts;
       lines.push(`  Decisions: ${d.total} — ${c.NO_TRADE ?? 0} no-trade, ${c.APPROVED ?? 0} opened, ${c.REJECTED ?? 0} rejected${c.ERROR ? `, ${c.ERROR} errors` : ''}`);
-      const top = d.topNoTrade.slice(0, 3).map(x => `${esc(short(x.reason))} ×${x.n}`);
+      const top = d.topNoTrade.slice(0, 3).map(x => `${esc(short(words(x.reason)))} ×${x.n}`);
       if (top.length) lines.push(`  Top no-trade: ${top.join('; ')}`);
-      const rej = Object.entries(d.rejections).map(([k, n]) => `${esc(k)} ×${n}`);
+      const rej = Object.entries(d.rejections).map(([k, n]) => `${esc(CODE_MSG[k.split(' ').at(-1)] ?? k)} ×${n}`);
       if (rej.length) lines.push(`  Rejected: ${rej.join('; ')}`);
       const min = b.detail?.minConfidence;
       if (min != null && d.nearMisses.length) {
@@ -235,12 +239,14 @@ export class TelegramControl {
         lines.push(`  Near misses: best ${pct(d.nearMisses[0])}, ${close} within 5 points of ${pct(min)}`);
       }
     }
+    const idle = this._idleLines();
+    if (idle.length) lines.push('', ...idle);
 
     const feeds = Object.entries(sum.health).filter(([, h]) => h.reconnects != null || !h.ok);
     const stale = Object.values(sum.buckets).reduce((n, b) => n + b.staleMinutes, 0);
     lines.push('', '<b>Health</b>');
     for (const [id, h] of feeds) {
-      lines.push(`  Feed [${esc(id)}]: ${h.ok ? 'live' : `⚠️ ${esc(h.reason)}`}, ${h.reconnects ?? 0} reconnects since start`);
+      lines.push(`  Feed [${this._name(id)}]: ${h.ok ? 'live' : `⚠️ ${esc(h.reason)}`}, ${h.reconnects ?? 0} reconnects since start`);
     }
     lines.push(`  Stale-feed minutes: ${stale} | Outages over ${Math.round((CONFIG.alerts?.dataDownAlertMs ?? 0) / 60_000)}m: ${ev.dataDown.length}`);
     lines.push(`  Starts: ${ev.starts.length} (${ev.unclean.length} after an unclean stop) | Errors logged: ${sum.errorsLogged} | Memory ${sum.memoryMb} MB`);
@@ -253,13 +259,13 @@ export class TelegramControl {
   formatAlert(e) {
     switch (e.type) {
       case 'DATA_DOWN':
-        return `📡 <b>DATA DOWN</b> [${esc(e.bucketId)}] for ${age(e.downForMs)}: ${esc(e.reason)}\nNo entries or exits for this feed until it recovers.`;
+        return `📡 <b>DATA DOWN</b> [${this._name(e.bucketId)}] for ${age(e.downForMs)}: ${esc(e.reason)}\nNo entries or exits for this feed until it recovers.`;
       case 'DATA_UP':
-        return `📡 Data back [${esc(e.bucketId)}] after ${age(e.downForMs)}`;
+        return `📡 Data back [${this._name(e.bucketId)}] after ${age(e.downForMs)}`;
       case 'ERROR_BURST':
         return `⚠️ <b>Errors</b>: ${e.count} in the last ${age(e.windowMs)}\nLatest: [${esc(e.lastMod)}] ${esc(e.lastMsg)}${e.lastCode ? ` (${esc(e.lastCode)})` : ''}`;
       default:
-        return `⚠️ ${esc(e.type)}${e.bucketId ? ` [${esc(e.bucketId)}]` : ''}`;
+        return `⚠️ ${esc(e.type)}${e.bucketId ? ` [${this._name(e.bucketId)}]` : ''}`;
     }
   }
 
@@ -271,8 +277,24 @@ export class TelegramControl {
     if (start?.previousExit === 'unclean') {
       lines.push(`⚠️ The previous run did not shut down cleanly (crash, kill or reboot). Open positions: ${start.openPositions}`);
     }
+    const buckets = this.api.listBuckets();
+    const on  = buckets.filter(b => b.state === 'on').map(b => `${esc(b.name)} (${esc(b.mode)})`);
+    const off = buckets.filter(b => b.state !== 'on').map(b => esc(b.name));
+    if (on.length)  lines.push(`Running: ${on.join(', ')}`);
+    if (off.length) lines.push(`Off: ${off.join(', ')}`);
     if (this.digestTimes.length) lines.push(`Digests at ${this.digestTimes.join(' and ')}`);
     return lines.join('\n');
+  }
+
+  _name(bucketId) {
+    return esc(this.api.getBucketNames()[bucketId] ?? bucketId);
+  }
+
+  // One line per bucket that is off or only a placeholder.
+  _idleLines() {
+    return this.api.listBuckets()
+      .filter(b => b.state !== 'on')
+      .map(b => `⚪ ${esc(b.name)}: ${b.state === 'off' ? 'OFF' : 'NOT BUILT'}`);
   }
 
   // --------------------------------------------------------------- commands
@@ -282,37 +304,39 @@ export class TelegramControl {
     const r = s.risk;
     const lines = [
       `📊 <b>Portfolio</b> (${esc(s.mode)})${r.halted ? ' 🛑 HALTED' : ''}${s.windingDown ? ' ⏳ WIND-DOWN' : ''}`,
-      `Equity: ${usd(r.equityUsd)} | HWM: ${usd(r.hwmUsd)} | DD: ${pct(r.drawdownPct)}`,
-      `Exposure: ${pct(r.grossExposurePct)} | 24h: ${usd(r.pnl24hUsd)} | 7d: ${usd(r.pnl7dUsd)}`,
-      `Reserve: ${usd(s.reserve?.equityUsd)}`,
+      `Equity ${usd(r.equityUsd)} | Drawdown ${pct(r.drawdownPct)} | Exposure ${pct(r.grossExposurePct)}`,
+      `P&amp;L 24h ${signedUsd(r.pnl24hUsd)} | 7d ${signedUsd(r.pnl7dUsd)} | Reserve ${usd(s.reserve?.equityUsd)}`,
       '',
     ];
     for (const b of s.buckets) {
-      const d = b.decisions24h;
+      if (b.detail?.placeholder) continue;
+      const paused = b.paused ? ` PAUSED${b.pauseReason ? `: ${esc(b.pauseReason)}` : ''}` : '';
       lines.push(
-        `<b>${esc(b.name)}</b> [${esc(b.id)}] ${esc(b.mode)}${b.paused ? ' ⏸' : ''}`,
-        `  Equity ${usd(b.equityUsd)} | Realized ${usd(b.realizedPnlUsd)} | Unrealized ${signedUsd(b.unrealizedPnlUsd)} | Open ${b.openPositions}`,
-        `  24h: ${d.NO_TRADE ?? 0} no-trade, ${d.REJECTED ?? 0} rejected, ${d.APPROVED ?? 0} opened`,
+        `${b.paused ? '⏸' : '▶️'} <b>${esc(b.name)}</b> (${esc(b.mode)})${paused}`,
+        `  ${usd(b.equityUsd)} | ${b.openPositions} open${b.openPositions ? ` (${signedUsd(b.unrealizedPnlUsd)})` : ''} | P&amp;L 24h ${signedUsd(b.pnl24hUsd)}`,
       );
       if (b.detail?.regime) {
-        lines.push(`  Regime: ${esc(b.detail.regime.regime)} ${pct(b.detail.regime.confidence)} — ${esc(b.detail.lastView)}`);
+        lines.push(`  ${regimeLabel(b.detail.regime.regime)} ${Math.round(b.detail.regime.confidence * 100)}%: ${esc(words(b.detail.lastView))}`);
       } else if (b.detail?.ready === false) {
         lines.push(`  ⚠️ Market data not running${b.detail.startError ? `: ${esc(b.detail.startError)}` : ''}`);
       }
     }
+    lines.push(...this._idleLines());
     return lines.join('\n');
   }
 
   _buckets() {
-    return ['<b>Buckets</b>', ...this.api.listBuckets().map(b =>
-      `${b.paused ? '⏸' : '▶️'} ${esc(b.id)} — ${esc(b.mode)} — ${usd(b.equityUsd)} — ${b.openPositions} open`)].join('\n');
+    return ['<b>Buckets</b> (use the ID in /pause, /resume, /positions and /decisions)', ...this.api.listBuckets().map(b => {
+      if (b.state !== 'on') return `⚪ ${esc(b.name)} [${esc(b.id)}]: ${b.state === 'off' ? 'OFF' : 'NOT BUILT'}`;
+      return `${b.paused ? '⏸' : '▶️'} ${esc(b.name)} [${esc(b.id)}]: ${esc(b.mode)} | ${usd(b.equityUsd)} | ${b.openPositions} open`;
+    })].join('\n');
   }
 
   _positions(bucketId) {
     const rows = this.api.getOpenPositions({ bucketId: bucketId ?? null });
     if (!rows.length) return 'No open positions.';
     return ['<b>Open positions</b>', ...rows.map(p => [
-      `#${p.id} [${esc(p.bucket_id)}] ${esc(p.symbol)} ${usd(p.notional_usd)} @ ${p.entry_price.toFixed(2)}`,
+      `#${p.id} [${this._name(p.bucket_id)}] ${esc(p.symbol)} ${usd(p.notional_usd)} @ ${p.entry_price.toFixed(2)}`,
       p.priced
         ? `  Mark ${p.markPrice.toFixed(2)}${p.markAgeMs != null ? ` (${age(p.markAgeMs)} old)` : ''} | P&amp;L ${signedUsd(p.unrealizedPnlUsd)}`
         : '  No price — valued at cost',
@@ -324,7 +348,7 @@ export class TelegramControl {
     const rows = this.api.getDecisions({ bucketId: bucketId ?? null, limit: 5 });
     if (!rows.length) return 'No decisions yet.';
     return ['<b>Recent decisions</b>', ...rows.map(d =>
-      `${new Date(d.ts).toISOString().slice(5, 16).replace('T', ' ')} [${esc(d.bucket_id)}] ${esc(d.outcome)} — ${esc(d.reason)}`)].join('\n');
+      `${localHhmm(new Date(d.ts))} [${this._name(d.bucket_id)}] ${esc(words(d.outcome).toLowerCase())}: ${esc(words(d.reason))}`)].join('\n');
   }
 }
 

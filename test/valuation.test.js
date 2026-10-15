@@ -125,5 +125,5 @@ test('telegram /positions shows the mark and unrealized P&L', async () => {
   const reply = await tg.handle('/positions alpha');
   assert.match(reply, /Mark 1900\.00 \(0s old\) \| P&amp;L -\$3\.00/);
   assert.match(await tg.handle('/positions beta'), /No open positions/);
-  assert.match(await tg.handle('/status'), /Unrealized -\$3\.00/);
+  assert.match(await tg.handle('/status'), /\$597\.00 \| 1 open \(-\$3\.00\) \| P&amp;L 24h \+\$0\.00/);
 });

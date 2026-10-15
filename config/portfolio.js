@@ -38,11 +38,13 @@ export const CONFIG = {
     errorBurst:      { count: 10, windowMs: 10 * 60_000, cooldownMs: 60 * 60_000 },
   },
 
-  // Capital not assigned to a bucket sits in the reserve and is never traded.
+  // Capital not assigned to an enabled bucket sits in the reserve and is never
+  // traded. Keys are the bucket IDs used in Telegram commands and the database.
   buckets: {
-    liquidDirectional: {
+    // Bucket 1: ETH/USDC spot longs on Uniswap V3 (code: src/buckets/liquidDirectional/).
+    majorsTrader: {
       enabled:            true,
-      name:               'Liquid Directional',
+      name:               'Majors Trader',
       mode:               'paper', // paper | shadow | live
       live:               false,
       allocationPct:      0.60,    // UNVALIDATED
@@ -104,9 +106,10 @@ export const CONFIG = {
         },
       },
     },
-    degenMemecoin: {
-      enabled:            true,
-      name:               'Degen Memecoin',
+    // Placeholder (always no trade) until the memecoin strategy is built. Off for now.
+    memecoinLab: {
+      enabled:            false,
+      name:               'Memecoin Lab',
       mode:               'paper',
       live:               false,
       paperOnly:          true,    // live is rejected outright
@@ -125,15 +128,16 @@ export const CONFIG = {
     // Not a strategy. Opens a small ETH/USDC position on a fixed schedule so the
     // open, close, restart and alert paths (and its own position cap and daily
     // loss limit) are exercised during the paper run. Expected to lose its costs.
-    exerciser: {
-      enabled:            true,
-      name:               'Exerciser (test only)',
+    // Off since the first paper run proved those paths (code: src/buckets/exerciser/).
+    systemTest: {
+      enabled:            false,
+      name:               'System Test',
       mode:               'paper',
       live:               false,
       paperOnly:          true,
       allocationPct:      0.02,
       evaluateIntervalMs: 60_000,
-      feed:               'liquidDirectional', // uses this bucket's price feed; must be listed before it
+      feed:               'majorsTrader', // uses this bucket's price feed; must be listed before it
       // No cooldown, spacing or losing-position rules: the fixed schedule is the test.
       risk: {
         maxConcurrentPositions: 2,
