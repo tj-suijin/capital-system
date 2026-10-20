@@ -7,7 +7,7 @@ alwaysApply: true
 
 The user is training a habit: pick the model that matches the work, not the most expensive one every time. They use their own Anthropic key so Cursor quota is not the limit.
 
-**Before writing or changing code, config that affects trading, or tests,** start the reply with a short model reminder. Do not start coding in the same breath if they should switch. One or two lines is enough.
+**Before writing or changing code, config that affects trading, or tests,** start the reply with a light, one-line model reminder. It is a nudge, not a gate: mention it and carry on. Do not stop work or wait for them to switch unless they ask.
 
 | Work | Use |
 | --- | --- |

@@ -1,12 +1,12 @@
 # PROJECT VISION DOCUMENT
 ## Multi-Bucket Autonomous Capital System
 
-**Last updated:** October 15, 2026 (scope freeze to Majors Trader only; see section 17, which wins wherever it conflicts with sections 1–16)  
+**Last updated:** October 19, 2026 (Karpathy agent guidelines added, doc conflicts resolved, OS-neutral wording; section 17 wins wherever it conflicts with sections 1–16, including section 2)  
 **Purpose:** Complete context for any coding agent (especially Cursor) so work can continue without the user re-explaining history, philosophy, architecture, or constraints.
 
 > **Current scope in one line:** v1 is the Majors Trader bucket and nothing else. Next comes the thesis, the kill criteria and the backtester, in that order, before any more paper running. Read section 17 first.
 
-**Canonical copy:** `W:\DEV\capital-system\docs\VISION.md`, tracked in git. This is the only maintained copy. The old `W:\DEV\PROJECT_VISION_MultiBucket_Trading_System.md` is no longer kept in sync.
+**Canonical copy:** `docs/VISION.md` in the repository root, tracked in git. This is the only maintained copy. The old standalone copy, `PROJECT_VISION_MultiBucket_Trading_System.md` (outside the repo, on the Windows PC), is no longer kept in sync.
 
 ---
 
@@ -36,6 +36,8 @@ The user is okay with a **semi-restart**. Fork the repository and reuse the good
 ---
 
 ## 2. Core Philosophy & Edge Thesis
+
+> **Superseded in part (October 19, 2026).** Where this section conflicts with section 17, section 17 wins. In particular, discipline and 24/7 consistency are necessary but are not an edge by themselves: Majors Trader needs a written thesis. The user may rewrite this section.
 
 The system is **not** primarily a high-win-rate gambler or a pure memecoin sniper.
 
@@ -171,7 +173,7 @@ These are system design principles.
 
 ## 8. Relationship to the Existing Codebase
 
-- **Decision (Oct 13, 2026):** instead of a GitHub fork, the work happens in a **fresh repository at `W:\DEV\capital-system`**. Selected ideas and code are ported from https://github.com/tj-suijin/trading-bot. The old local clone at `W:\DEV\trading-bot` stays untouched as a reference; it still has some uncommitted changes of the user's.
+- **Decision (Oct 13, 2026):** instead of a GitHub fork, the work happens in a **fresh repository, `capital-system`**. Selected ideas and code are ported from https://github.com/tj-suijin/trading-bot. The old local clone of `trading-bot` (on the Windows PC) stays untouched as a reference; it still has some uncommitted changes of the user's.
 - Reuse: modular structure ideas, risk primitives, paper mode, SQLite patterns, Telegram control plane, overall engineering quality.
 - Rewrite / replace: Aerodrome-specific watcher, pool math (`sqrtPriceX96` → Uniswap tick/sqrtPrice), and execution paths.
 - Goal: Clean Uniswap-on-Base implementation of the LiquidDirectional bucket first, sitting under a simple portfolio shell.
@@ -218,17 +220,18 @@ When this document is provided:
 5. Preserve the modular, risk-aware style of the original project.
 6. When implementing the degen bucket, apply staged filtering, rejection memory, and strict position discipline. Expect it to eventually live on Solana.
 7. Keep the overall identity as a multi-bucket capital allocator, not a pure memecoin sniper.
-8. Ask clarifying questions only when a decision would significantly change architecture or risk posture. Otherwise make reasonable choices and document them.
+8. Ask when something is unclear, including small choices, and state assumptions explicitly (user's choice, October 19, 2026: the user wants to be more involved; this follows `.cursor/rules/karpathy-guidelines.mdc`). Document the answer.
 9. Surface any place where parameters remain unvalidated.
-10. Work in the `W:\DEV\capital-system` workspace, not the home folder.
+10. Work in the `capital-system` repository folder, not the home folder.
 11. Follow the repo's `.cursorrules`:
-    - never commit without the user's review
+    - never commit unless the user has reviewed the changes and approved the commit
     - use Pino structured logging
     - add a one-line `CHANGELOG.md` entry for any trading-logic change or bug fix
 12. Add a development journal entry (section 15) at the end of every session that changes anything.
 13. Route every operator feature (Telegram, the future GUI) through `ControlApi` (section 16).
 14. Tell the user directly when their environment needs fixing, rather than working around it.
 15. Scope is Majors Trader only. Follow the rules for the AI worker in section 17.4. They win wherever they conflict with items above.
+16. Follow `.cursor/rules/karpathy-guidelines.mdc`: think before coding, keep the minimum that solves the problem, make surgical changes, and define verifiable success criteria. Where it conflicts with item 8 or any other item above, the Karpathy guidelines win, except that section 17.4 still wins over everything in this section.
 
 The user wants to hit the ground running. Optimize for clarity, safety, and incremental progress that can be left running in paper mode.
 
@@ -236,9 +239,9 @@ The user wants to hit the ground running. Optimize for clarity, safety, and incr
 
 ## 12. Build Status (as of October 15, 2026, fixes after the first paper run)
 
-**v1 step 1, the portfolio shell, has been coded, tested (23 passing tests), reviewed and committed.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
+**v1 step 1, the portfolio shell, has been coded, tested (23 tests when it was written), reviewed and committed.** No real strategy exists yet. Both buckets are placeholders that always answer "no trade", so the shell can run unattended.
 
-What exists in `W:\DEV\capital-system`:
+What exists in the repository:
 - `config/portfolio.js`: every number, each marked UNVALIDATED.
 - `src/portfolio/portfolioManager.js`: runs each bucket on a timer and pushes every request through one pipeline: sizer, then bucket risk, then global risk, then capital allocator, then executor. Every outcome is written to a `decisions` table: NO_TRADE, REJECTED, SHADOW, APPROVED or ERROR.
 - `src/portfolio/capitalAllocator.js`: one persisted ledger per bucket (cash, in-use, realized P&L) plus a reserve that can never be traded.
@@ -256,12 +259,12 @@ Docs written in session 2: `docs/JOURNAL.md`, `.cursor/rules/journal.mdc`, `CHAN
 
 The shell and docs were committed by the user on October 13, 2026 (commit `f06ec15`) and pushed to the private GitHub repo https://github.com/tj-suijin/capital-system.
 
-**Bucket 1 (LiquidDirectional), in progress.** Parts 1 and 2 of 5 are coded, tested (50 tests passing), reviewed and committed (`d361a61`):
+**Bucket 1 (LiquidDirectional), in progress.** Parts 1 to 4 of 5 are done and committed, and part 5's setup is committed and pushed too. Only the 7-day run itself is postponed (see the superseded plan below):
 1. Done: market data for the Uniswap V3 WETH/USDC 0.05% pool on Base (on-chain verification, backfill, live stream, candles). Verified against the live chain with the user's Alchemy key.
 2. Done: indicators (with the ADX and RSI fixes), regime detector, both strategies, and the analyst.
 3. Done and committed (`9896957`): the bucket class (entries, exits including the 4-hour limit, stale-data and stop sanity checks). 57 tests passing; ran live with `npm start`.
 4. Done and committed ("Bucket 1 part 4: mark-to-market valuation"): mark-to-market valuation. Equity, sizing, the high-water mark, the drawdown halt, exposure, snapshots, status and a new Telegram `/positions` command all use the live pool price. 66 tests passing.
-5. In progress: the 7-day paper run. The setup is coded, tested (94 tests passing, including a 3-day replay through the full pipeline) and smoke-tested live, and waits for the user's review and commit. It adds:
+5. Setup done, run postponed: the 7-day paper run. The setup was coded, tested (94 tests at the time, including a 3-day replay through the full pipeline) and smoke-tested live. It adds:
    - a restart supervisor (`npm run paper`) and a logon scheduled task
    - a single-instance lock and crash logging
    - Telegram digests at 08:00 and 21:00, plus alerts for restarts, data outages and error bursts
@@ -270,7 +273,7 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
    - a paper-only 45% minimum confidence for bucket 1
    - $4,000 of paper capital on a fresh database
 
-   The setup was committed as `0c46d45`, which has not been pushed yet. The run started at 17:31 on Oct 14, 2026, and the user stopped it after 7.5 hours to review.
+   The setup was committed as `0c46d45` and later pushed. The run started at 17:31 on Oct 14, 2026, and the user stopped it after 7.5 hours to review.
    - Operation was clean.
    - Bucket 1 lost \$3.72 over 3 trades, all bought in the first minutes of a sudden 3% ETH drop.
    - The Exerciser behaved as designed.
@@ -290,7 +293,7 @@ The shell and docs were committed by the user on October 13, 2026 (commit `f06ec
    - **Allocator guard:** startup refuses to double-count capital after a rename.
    - **Logging:** tests no longer write to the log files.
 
-   108 tests pass. Run 1's database is archived in `data/archive/run1-2026-10-14/`.
+   108 tests passed at the last run, on the Windows PC on October 15, 2026. They have not been re-run on the Mac (see section 14). Run 1's database is archived in `data/archive/run1-2026-10-14/`.
 
 **Superseded plan (October 15, 2026, evening).** The 7-day run was going to restart next, with the backtester after it. That order is reversed. The 7-day run is now postponed until the thesis, the kill criteria and the backtester exist (section 17). The paper run setup stays in the repo, ready for later.
 
@@ -331,13 +334,15 @@ See `docs/JOURNAL.md` for details.
 
 ## 14. User Environment Notes
 
-- Windows, PowerShell, Node 24.
-- **Open `W:\DEV\capital-system` as the Cursor workspace.** Working from the home folder makes every file write prompt for approval.
+- The project needs Node 24 or newer (it uses the built-in `node:sqlite`). The user works on two machines:
+  - **Windows PC:** PowerShell, Node 24. The restart supervisor (`npm run paper`) and the scheduled-task installer are PowerShell scripts, so they run only here for now.
+  - **Mac:** Node is installed. On October 19, 2026 it was v22.22.2, below the required 24, and `npm install` had not been run (no `node_modules`), so the tests do not run there yet. There is no PowerShell, so `npm run paper` does not work there. `npm start` is the way to run it, but it has not been tried on the Mac.
+- **Open the repository folder itself as the Cursor workspace.** Working from the home folder makes every file write prompt for approval (seen on Windows).
 - Git identity is set globally (`wave!`, a personal Gmail address). Switch to GitHub's no-reply email before pushing to any public repo.
 - `gh` (the GitHub CLI) is installed on Windows and logged in as `tj-suijin`. GitHub is also linked to the user's Cursor account. The repo uses LF line endings via `.gitattributes`.
-- npm warns `Unknown env config "devdir"`, probably left over from the Build Tools attempt. The user should remove that setting.
+- On the Windows PC, npm warns `Unknown env config "devdir"`, probably left over from the Build Tools attempt. The user should remove that setting.
 - Telegram keys go in `.env` (template: `.env.example`). Without them the Telegram controls are off.
-- Cursor's agent sandbox does not work on this Windows machine, so agent terminal commands fail inside it. Fixed in session 2: Cursor Settings > Agents uses Allowlist mode with sandboxing off, and `npm test`, `npm run status`, `git status`, `git diff` and `git log` are allowlisted. Other commands ask for approval.
+- On the Windows PC, Cursor's agent sandbox does not work, so agent terminal commands fail inside it. Fixed in session 2: Cursor Settings > Agents uses Allowlist mode with sandboxing off, and `npm test`, `npm run status`, `git status`, `git diff` and `git log` are allowlisted. Other commands ask for approval.
 
 ---
 
@@ -351,6 +356,8 @@ The user wants a running journal of everything built and changed.
 ---
 
 ## 16. GUI (planned, not built)
+
+> **Deferred (October 19, 2026).** The GUI is not worked on until the user has made real money with this project.
 
 The user wants a GUI: a more visual version of the Telegram commands, with the feel of the **peak DeFi days (DeFi Summer 2020–21)**.
 - **Look:**
@@ -400,6 +407,8 @@ This is a freeze, not a deletion:
 
 ### 17.3 Two missing pieces (both are the user's work)
 
+Both apply to Majors Trader only (user's choice, October 19, 2026). If another bucket should use the same logic, the user will decide that when the time comes.
+
 **A pre-registered thesis for Majors Trader.** Three sentences:
 1. What the user believes about ETH/USDC on Base (for example, how trends and chop behave).
 2. Why trend-following, mean reversion and the regime switch should capture that.
@@ -414,7 +423,7 @@ The thesis does not have to be right. It has to be specific enough to be wrong.
 
 They should feel slightly pessimistic. The point is to commit in advance, so that the user cannot later argue that a losing strategy "just needs more time".
 
-**Where they live:** `docs/THESIS.md` (to be created by the user). It is empty until the user writes it.
+**Where they live:** `docs/THESIS.md`. A template with blank placeholders was created on October 19, 2026. It stays blank until the user writes it.
 
 | Item | Status |
 | --- | --- |
@@ -437,7 +446,7 @@ The AI worker may ask questions, structure the text, or offer clearly labeled ca
 
 ### 17.5 New order of work
 
-1. Update `VISION.md` and `.cursorrules` (done, awaiting the user's review).
+1. Update `VISION.md` and `.cursorrules` (done).
 2. User writes the thesis.
 3. User writes the kill criteria.
 4. Spec the backtester (17.6).
@@ -474,7 +483,9 @@ Engineering notes (from the agent, not the advisor):
 
 ### 17.7 What does not change
 
-The philosophy in section 2, the engineering patterns in section 7, the four-condition live gate, "exits are never blocked", the risk architecture, paper-first, the decision log (including `NO_TRADE`), ControlApi as the single operator surface (the GUI comes after profitability), and the `.cursorrules` and journal practices.
+The engineering patterns in section 7, the four-condition live gate, "exits are never blocked", the risk architecture, paper-first, the decision log (including `NO_TRADE`), ControlApi as the single operator surface (the GUI is deferred until the user has made real money, section 16), and the `.cursorrules` and journal practices.
+
+Section 2 is the exception: section 17 wins where they conflict (see the note at the top of section 2).
 
 ---
 

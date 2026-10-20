@@ -126,7 +126,7 @@ Every 5 minutes the manager refreshes global risk, writes equity snapshots, and 
 
 ## Running unattended
 
-- **Supervisor.** `npm run paper` runs `scripts/paper-run.ps1`, which starts `src/index.js` and restarts it after a crash (15 seconds, doubling up to 5 minutes). Exit code 0 (a clean stop) and 3 (another copy holds the lock) end the supervisor. After 5 crashes within an hour it stops and sends a Telegram message through `src/tools/notify.js`. `scripts/install-task.ps1` registers it as a Windows scheduled task at logon.
+- **Supervisor.** `npm run paper` runs `scripts/paper-run.ps1`, which starts `src/index.js` and restarts it after a crash (15 seconds, doubling up to 5 minutes). Exit code 0 (a clean stop) and 3 (another copy holds the lock) end the supervisor. After 5 crashes within an hour it stops and sends a Telegram message through `src/tools/notify.js`. `scripts/install-task.ps1` registers it as a Windows scheduled task at logon. Both scripts are PowerShell, so the supervisor is Windows-only for now.
 - **Single instance.** `src/index.js` and `npm run market` take `data/capital.lock` (next to the database). A lock whose process is gone is taken over.
 - **Crashes.** An uncaught exception is logged as fatal and exits with code 1. A `cleanShutdown` flag in `settings` is cleared at start and set by a clean stop, so the next start knows whether the previous one crashed, was killed or lost power.
 - **Health alerts.** After every bucket cycle, `HealthMonitor` checks the bucket's `health(now)`. A feed that has not been healthy for 10 minutes raises one `DATA_DOWN` alert, and `DATA_UP` when it recovers. Ten error log lines within 10 minutes raise `ERROR_BURST`, at most once an hour (Telegram's own errors are not counted).
@@ -183,6 +183,8 @@ Bucket 1 is **Majors Trader** (ID `majorsTrader`). Its code keeps the older name
 - Marks come from the same Uniswap pool the bucket trades on. There is no second price reference, so a manipulated pool price would move equity and could trip the drawdown halt. The outlier filter is the only guard.
 
 ## Adding a bucket
+
+**Frozen.** The user has frozen progress on adding more buckets (scope freeze of Oct 15, 2026, confirmed Oct 19, 2026). Do not add one until the user lifts the freeze. See `VISION.md` section 17. The steps below only describe how it would be done later.
 
 1. Subclass `Bucket` in `src/buckets/<name>/`, implementing `evaluate()` and, if needed, `reviewPositions()`.
 2. Replace its `NullBucket` factory in `src/buckets/registry.js`.

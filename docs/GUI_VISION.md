@@ -49,4 +49,4 @@ The routes are a proposal and will be settled when the GUI is built.
 
 ## When
 
-After bucket 1 runs cleanly in paper mode. Any new operator feature must be added to `ControlApi` first, so Telegram and the GUI stay in step.
+After the user has made real money with this project (user's choice, Oct 19, 2026). Until then the GUI is not worked on. Any new operator feature must be added to `ControlApi` first, so Telegram and the GUI stay in step.

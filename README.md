@@ -17,9 +17,9 @@ The product vision is in [`docs/VISION.md`](docs/VISION.md).
 
 ## Setup
 
-```powershell
+```sh
 npm install
-Copy-Item .env.example .env   # optional: add Telegram keys
+cp .env.example .env   # optional: add Telegram keys (Windows PowerShell: Copy-Item .env.example .env)
 ```
 
 Without Telegram keys the system still runs. Only the Telegram controls are turned off.
@@ -31,7 +31,7 @@ Bucket 1's price feed needs a Base RPC. Put an Alchemy key in `.env` as `ALCHEMY
 | Command | What it does |
 | --- | --- |
 | `npm start` | Runs the portfolio manager (paper mode by default). Stop with Ctrl+C. |
-| `npm run paper` | Runs it under the restart supervisor (`scripts/paper-run.ps1`), for unattended runs. Stop with Ctrl+C. |
+| `npm run paper` | Runs it under the restart supervisor (`scripts/paper-run.ps1`), for unattended runs. Windows only for now, because the supervisor is a PowerShell script. Stop with Ctrl+C. |
 | `npm run status` | Prints the current portfolio status as JSON and exits. |
 | `npm run report` | Writes a summary of the paper run to `reports/` and prints it. Add `-- --since 2026-10-14T08:00` to choose the window. |
 | `npm run market` | Runs bucket 1's price feed on its own and logs the analyst's view each minute. Nothing trades. Cannot run beside `npm start`. |
@@ -40,6 +40,8 @@ Bucket 1's price feed needs a Base RPC. Put an Alchemy key in `.env` as `ALCHEMY
 Data is stored in `data/capital.db`. Only one copy of the system can run against it (`data/capital.lock`). Logs go to the console (pretty), `logs/app.log` (JSON), `logs/errors.log` (errors only) and `logs/supervisor.log` (restarts).
 
 ## Running unattended on Windows
+
+The restart supervisor is PowerShell-only today, so this section is Windows-specific. On other systems, run `npm start` and restart it yourself if it stops. There is no cross-platform supervisor yet.
 
 1. Pause Windows Update for the length of the run. The scheduled task only starts after you log on, so an update reboot stops the run.
 2. Run it outside Cursor, so closing the editor doesn't stop it. Either open a PowerShell window in the repo and run `npm run paper`, or register the logon task (an elevated PowerShell may be needed):

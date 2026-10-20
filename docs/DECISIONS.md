@@ -4,7 +4,7 @@ Each entry records what was decided, why, and whether it can be revisited. The f
 
 ## Repository and stack
 
-**Fresh repository instead of a GitHub fork** (Oct 13, 2026). The work lives in `W:\DEV\capital-system`. Selected ideas and code are ported from [tj-suijin/trading-bot](https://github.com/tj-suijin/trading-bot). The old clone at `W:\DEV\trading-bot` is left untouched as a reference, because it still holds some uncommitted changes of the user's.
+**Fresh repository instead of a GitHub fork** (Oct 13, 2026). The work lives in a fresh `capital-system` repository. Selected ideas and code are ported from [tj-suijin/trading-bot](https://github.com/tj-suijin/trading-bot). The old clone of `trading-bot` (on the Windows PC) is left untouched as a reference, because it still holds some uncommitted changes of the user's.
 
 **Node 24, ESM, plain JavaScript.** Same language as the old bot, so its logic ports directly.
 
@@ -173,6 +173,34 @@ A position starts slightly under water because of its fees and slippage. In prac
 **Agent behavior:** flag parameter changes that respond to a specific loss, and remind the user of the thesis and kill criteria when results come in. Both are in `.cursorrules`.
 
 Revisitable: the user can lift the freeze whenever they choose.
+
+## Agent coding guidelines (Oct 19, 2026, user's choice)
+
+**Karpathy behavioral guidelines** live in `.cursor/rules/karpathy-guidelines.mdc` and apply to every session. The four rules are: think before coding, write the minimum that solves the problem, make surgical changes, and define verifiable success criteria.
+
+The user added them because they believe this will help the project. That is a theory, not a measured result. The file's own test is fewer unnecessary changes in diffs, fewer rewrites from overcomplication, and clarifying questions coming before implementation rather than after mistakes.
+
+They merge with the rest of the agent rules and do not replace the scope freeze or thesis ownership. Where they conflict with the rest of VISION section 11, the Karpathy guidelines win (user's choice, Oct 19, 2026, because the user wants to be more involved). So the agent asks when something is unclear, including small choices, and states its assumptions. VISION 11.8 was changed to match.
+
+Revisitable: the user can drop or change the rule if it slows work without improving diffs.
+
+## Doc conflict decisions (Oct 19, 2026, user's choices)
+
+**Commits need the user's approval of the commit.** `.cursorrules` now says the agent never commits unless the user has reviewed the changes and approved the commit. The old wording ("user review strings") was unclear.
+
+**The GUI is deferred until the user has made real money with the project.** It is not worked on until then. `GUI_VISION.md` and VISION 17.7 now agree.
+
+**Section 17 wins over section 2.** Discipline and 24/7 consistency are necessary but are not an edge by themselves, and Majors Trader needs a written thesis. The user may rewrite section 2 later. Section 2 carries a note saying so.
+
+**The thesis and kill criteria apply to Majors Trader only.** If the user wants the same logic in another bucket, the user will make that decision when the time comes. `docs/THESIS.md` is a template with blank placeholders; the user fills it in.
+
+**The docs are OS-neutral.** The user works on a Windows PC and a Mac. Machine-specific facts are labeled by machine. The restart supervisor is still PowerShell-only, so `npm run paper` works only on Windows for now. Making it cross-platform would be code work and is not scheduled; the backtester comes first.
+
+**Adding more buckets is frozen.** The user confirmed this on Oct 19, 2026, and `ARCHITECTURE.md` "Adding a bucket" now says so, so it no longer reads as an open invitation. It is the same freeze as in "Scope freeze" above.
+
+**The model reminder is only a light nudge.** `.cursor/rules/model-reminder.mdc` now asks for one light line before coding, without stopping work or waiting for the user to switch models. Whether docs-only work should trigger it was not decided.
+
+**Section 2 of `VISION.md` may be revised by the user.** The user is still working on the Majors Trader thesis. Nothing was changed in section 2 beyond the note that section 17 wins.
 
 ## Unvalidated parameters
 

@@ -4,6 +4,75 @@ A running record of everything built and changed, newest entry first. Each entry
 
 ---
 
+## October 19, 2026 (session 8, continued): Doc conflict cleanup
+
+**Area:** Docs and agent rules. No trading code was changed.
+
+**What happened:** The user asked for a read-only check for conflicts between the docs and the rules. It found three real conflicts, some unclear wording and some stale text. The user then decided each item, and the agent made only those changes.
+
+**What changed:**
+- `.cursorrules`: the commit rule now says the agent never commits unless the user has reviewed the changes and approved the commit. The old wording ("user review strings") was unclear.
+- `docs/VISION.md`:
+  - Section 11.8 and 11.16: the Karpathy guidelines now win over the old "only ask for big decisions" rule. The agent asks when something is unclear, including small choices.
+  - Section 2 has a note that section 17 wins where they conflict. Section 17.7 no longer lists section 2 as unchanged.
+  - Section 16 and 17.7: the GUI is deferred until the user has made real money.
+  - Section 17.3: the thesis and kill criteria apply to Majors Trader only, and `docs/THESIS.md` now exists as a template.
+  - Section 17.5 step 1, section 12 (build status) and the test counts: stale text fixed.
+  - Section 14 and the `W:\` paths: made OS-neutral, with the Windows PC and Mac labeled separately.
+- `docs/GUI_VISION.md`: "When" now matches the deferral.
+- `docs/THESIS.md`: new template. The thesis, kill-criteria numbers and dates are blank placeholders for the user.
+- `README.md` and `docs/ARCHITECTURE.md`: the setup command works on both systems, and the PowerShell supervisor is labeled Windows-only.
+- `docs/DECISIONS.md`: the Karpathy entry was updated and a new "Doc conflict decisions" section was added.
+- `docs/ARCHITECTURE.md`: "Adding a bucket" now says the user has frozen progress on additional buckets, so it no longer conflicts with the scope freeze.
+- `.cursor/rules/model-reminder.mdc`: the reminder is now one light line that does not stop work.
+
+**Why:** The user wants to be more involved, wants one clear answer on which rule wins, and works on two machines.
+
+**Decisions** (also in `docs/DECISIONS.md`):
+- The Karpathy guidelines win over the older "decide small things yourself" rule.
+- The GUI is deferred until after real money.
+- Section 17 wins over section 2, and the thesis applies to Majors Trader only.
+- Commits need the user's approval of the commit.
+- The docs are OS-neutral.
+
+**Left alone on purpose (the user's choice):** the "three numbers" wording in 17.3, the old bucket names in `VISION.md` sections 1 to 8, and the old "next steps" in session 6 of this journal. One item stays open: whether doc-only work should trigger the model reminder at all (not decided; the reminder is now only a light nudge).
+
+**Not verified:**
+- The test count. `npm test` fails on the Mac: `node_modules` does not exist and Node is v22.22.2, while the project needs 24 or newer. The docs now say "108 tests passed at the last run, on the Windows PC on October 15", not that they pass today.
+- `npm start` on the Mac has not been tried.
+- The agent read the Windows-specific text but did not check any code for other Windows assumptions beyond `package.json` and the PowerShell scripts' names.
+
+**Next steps and open questions:**
+1. The user's work: write the thesis and kill criteria in `docs/THESIS.md`. The user is still working on the thesis and may revise section 2.
+2. On the Mac, install Node 24 and run `npm install` before running tests or the system.
+3. A cross-platform replacement for the PowerShell supervisor is not scheduled. The backtester comes first.
+4. Then the backtester spec, as before. Do not restart the paper run or tune parameters.
+
+---
+
+## October 19, 2026 (session 8): Karpathy guidelines added to Cursor rules
+
+**Area:** Cursor agent rules and docs. No trading code was changed.
+
+**What changed:**
+- The user added `.cursor/rules/karpathy-guidelines.mdc`, an always-on Cursor rule. It tells the agent to think before coding, keep the minimum that solves the problem, make surgical changes, and define verifiable success criteria before looping.
+- `docs/DECISIONS.md`: recorded the choice and the user's theory.
+- `docs/VISION.md` section 11: added a pointer so the vision still lists the agent rules in one place.
+
+**Why:** The user believes these guidelines will help the project in a positive way. The file itself says they bias toward caution over speed, and that they are working if diffs get smaller, rewrites from overcomplication drop, and clarifying questions come before implementation rather than after mistakes.
+
+**Decisions:**
+- The Karpathy guidelines are now part of how the agent is supposed to work on this repo, alongside `.cursorrules`, the journal rule, and the model reminder.
+- They merge with the existing project rules. Scope freeze and thesis ownership still apply. (The first version of this entry said small product defaults could be decided without asking. The user reversed that later the same day; see the next entry.)
+
+**Unvalidated:** Whether the guidelines actually help. That is the user's theory. It has not been measured. The test the file names is fewer unnecessary changes in diffs, fewer rewrites, and questions coming earlier.
+
+**Not verified:** No tests were run, because no code changed. The user is on the Mac now and said they will commit at the end of this work, so these files may still be uncommitted.
+
+**Next steps:** Same as session 7. Thesis, kill criteria, then the backtester spec. Do not restart the paper run or tune parameters until the backtest has been read.
+
+---
+
 ## October 15, 2026 (session 7): Scope freeze to Majors Trader
 
 **Area:** Docs and agent rules only. No code was changed, and nothing was committed.
